@@ -22,12 +22,16 @@ class ObjectiveWeights(BaseSettings):
 
     model_config = SettingsConfigDict(env_prefix="RAILTWIN_W_")
 
-    delay: float = 1.0          # per second of network delay
+    delay: float = 1.0          # per second of (economic-weighted) network delay
     conflict: float = 6000.0    # per residual CRITICAL conflict (dominates)
     headway: float = 2500.0     # per headway violation
     platform: float = 3000.0    # per platform conflict
     route: float = 400.0        # per route change (infrastructure churn)
     hold: float = 0.5           # per second of imposed hold
+    # Reward for clearing trains within the horizon, per unit of economic weight
+    # cleared. Kept well below the delay scale so throughput never overrides
+    # protecting a high-value movement (the previous 1e6 hard weight did).
+    throughput: float = 200.0
     # Recommendation scoring: passenger delay weighted vs freight (matches TS engine).
     passenger_vs_freight: float = 3.0
 
@@ -41,7 +45,10 @@ class Settings(BaseSettings):
     # --- Simulation ---
     # Epoch the sim clock starts from (matches the frontend seed in store.tsx).
     epoch_start_ms: int = Field(default_factory=lambda: int(time.time() * 1000))
-    clock_mode: str = "LIVE"
+    # DEMO pins the clock inside the snapshot's active window so the console is
+    # populated out of the box. LIVE runs on the real wall clock but remaps the
+    # schedule into the window (see SimulationEngine) so it is never empty either.
+    clock_mode: str = "DEMO"
     demo_epoch_start_ms: int = 1_786_792_440_000  # 2026-08-15T16:44:00+05:30
     tick_seconds: float = 0.25               # broadcast cadence (sim advances speed*tick)
     default_horizon_sec: int = 900           # 15 min prediction horizon

@@ -26,15 +26,19 @@ export const Route = createFileRoute("/scenario")({
 
 function ScenarioScreen() {
   return (
-    <main className="flex min-h-0 flex-1 flex-col">
+    <main className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:overflow-hidden">
       <h1 className="sr-only">Scenario laboratory</h1>
       <Timeline />
-      <div className="grid min-h-0 flex-1 grid-cols-[380px_minmax(0,1fr)_320px] gap-px bg-border">
-        <ScenarioPanel />
-        <div className="min-h-[480px] bg-map">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-px bg-border lg:grid-cols-[380px_minmax(0,1fr)_320px]">
+        <div className="flex min-h-0 flex-col max-lg:min-h-[60vh]">
+          <ScenarioPanel />
+        </div>
+        <div className="min-h-[300px] bg-map lg:min-h-[480px]">
           <TwinMap />
         </div>
-        <ConflictPanel />
+        <div className="flex min-h-0 flex-col max-lg:min-h-[40vh]">
+          <ConflictPanel />
+        </div>
       </div>
       <KpiBar />
     </main>

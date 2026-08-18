@@ -26,17 +26,17 @@ export const Route = createFileRoute("/decision")({
 
 function DecisionScreen() {
   return (
-    <main className="flex min-h-0 flex-1 flex-col">
+    <main className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:overflow-hidden">
       <h1 className="sr-only">What-if simulation and decision</h1>
       <Timeline />
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_360px] gap-px bg-border">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-px bg-border lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="grid min-h-0 grid-rows-[minmax(300px,1fr)_auto] gap-px bg-border">
           <div className="bg-map">
             <TwinMap />
           </div>
           <OptionsPanel className="max-h-[38vh]" />
         </div>
-        <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_auto] gap-px bg-border">
+        <div className="grid min-h-0 gap-px bg-border max-lg:min-h-[70vh] lg:grid-rows-[minmax(0,1fr)_auto]">
           <DecisionPanel />
           <SafetyPanel className="max-h-[38vh]" />
         </div>

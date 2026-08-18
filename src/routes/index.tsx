@@ -28,17 +28,17 @@ export const Route = createFileRoute("/")({
 
 function Console() {
   return (
-    <main className="flex min-h-0 flex-1 flex-col">
+    <main className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:overflow-hidden">
       <h1 className="sr-only">Vasai Road Junction live operations console</h1>
       <Timeline />
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_340px] gap-px bg-border">
-        <div className="grid min-h-0 grid-rows-[minmax(320px,1fr)_auto] gap-px bg-border">
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-px bg-border lg:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="grid min-h-0 grid-rows-[minmax(300px,1fr)_auto] gap-px bg-border lg:grid-rows-[minmax(320px,1fr)_auto]">
           <div className="bg-map">
             <TwinMap />
           </div>
           <TrainList className="max-h-[34vh]" />
         </div>
-        <div className="grid min-h-0 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-px bg-border">
+        <div className="grid min-h-0 gap-px bg-border max-lg:min-h-[70vh] lg:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">
           <ConflictPanel />
           <Inspector />
         </div>

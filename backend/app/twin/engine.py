@@ -52,6 +52,21 @@ class DelayEvent:
 
 _len_cache: dict[str, float] = {}
 
+# Active window of the fixed daily snapshot (earliest..latest scheduled
+# departure). LIVE mode remaps any real time-of-day into this window so the
+# console is populated at any hour instead of showing an all-completed network.
+_departures = [f.scheduled_departure_sec for f in fleet if f.scheduled_departure_sec]
+WINDOW_START = min(_departures) if _departures else 0
+WINDOW_END = max(_departures) if _departures else 86400
+
+
+def remap_into_window(service_seconds: float) -> float:
+    """Fold a time-of-day into the snapshot's active window (LIVE mode)."""
+    span = WINDOW_END - WINDOW_START
+    if span <= 0 or WINDOW_START <= service_seconds <= WINDOW_END:
+        return service_seconds
+    return WINDOW_START + ((service_seconds - WINDOW_START) % span)
+
 
 def route_length(route_id: str) -> float:
     if route_id not in _len_cache:
@@ -61,14 +76,23 @@ def route_length(route_id: str) -> float:
 
 class SimulationEngine:
     def __init__(self, scenario_id: str = "BASE", seed: int | None = None,
-                 epoch_start_ms: int | None = None):
+                 epoch_start_ms: int | None = None, clock_mode: str = "DEMO"):
         self.scenario_id = scenario_id
         self.seed = settings.seed if seed is None else seed
+        self.clock_mode = (clock_mode or "DEMO").upper()
         # Direct engine consumers/tests use the deterministic snapshot clock.
         # The live orchestrator passes its wall-clock epoch explicitly.
         self.epoch_start_ms = epoch_start_ms or settings.demo_epoch_start_ms
         instant = datetime.fromtimestamp(self.epoch_start_ms / 1000, tz=ZoneInfo("Asia/Kolkata"))
         self.service_seconds = instant.hour * 3600 + instant.minute * 60 + instant.second
+        # LIVE runs on the real wall clock; if that time-of-day sits outside the
+        # snapshot's active window, fold it in (and shift the display epoch to
+        # match) so trains are actually running instead of all pre-completed.
+        if self.clock_mode == "LIVE":
+            clamped = remap_into_window(self.service_seconds)
+            if clamped != self.service_seconds:
+                self.epoch_start_ms -= int((self.service_seconds - clamped) * 1000)
+                self.service_seconds = clamped
         self.setup: ScenarioSetup = scenario_setup(scenario_id)
         self.env = simpy.Environment()
         self.trains: dict[str, TrainRuntime] = {}

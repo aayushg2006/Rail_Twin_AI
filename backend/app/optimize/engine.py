@@ -96,10 +96,21 @@ class OptimizationEngine:
         keep = fleet_by_id.get(keep_id)
         give = fleet_by_id.get(selected.action.train_id)
         if keep and give:
-            rationale = (f"{keep.id} ({keep.type.lower()}, priority {keep.priority}) carries the "
-                         f"higher passenger impact and is closer to {conflict.resource_label}. "
-                         f"{give.id} ({give.type.lower()}, priority {give.priority}) can give way at "
-                         f"the lowest network cost (objective {round(option_cost(selected, self.weights))}).")
+            keep_cls = (keep.service_class or keep.type).lower().replace("_", " ")
+            give_cls = (give.service_class or give.type).lower().replace("_", " ")
+            obj = round(option_cost(selected, self.weights))
+            if keep.economic_weight >= give.economic_weight:
+                rationale = (f"{keep.id} ({keep_cls}, economic weight {keep.economic_weight:g}) is the "
+                             f"higher-value movement over {conflict.resource_label}, so {give.id} "
+                             f"({give_cls}, economic weight {give.economic_weight:g}) gives way at the "
+                             f"lowest network cost (objective {obj}).")
+            else:
+                # Give-way is forced here (e.g. a following move on the same line);
+                # holding {give} still clears the conflict at least network cost.
+                rationale = (f"Holding {give.id} ({give_cls}, economic weight {give.economic_weight:g}) "
+                             f"clears {conflict.resource_label} at the lowest network cost (objective "
+                             f"{obj}); {keep.id} ({keep_cls}, economic weight {keep.economic_weight:g}) "
+                             f"keeps its path.")
         else:
             rationale = f"Applies the lowest-cost feasible regulation for {conflict.resource_label}."
         others = [e for e in evals

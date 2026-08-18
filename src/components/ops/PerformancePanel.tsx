@@ -2,9 +2,13 @@ import { useTwin } from "@/twin/store";
 import { Metric, Panel, PanelHead, Row } from "./primitives";
 
 export function PerformancePanel({ className }: { className?: string }) {
-  const { kpis, baselineKpis, decisions } = useTwin();
+  const { kpis, baselineKpis, decisions, delayAvoidedSec } = useTwin();
   const accepted = decisions.filter((d) => d.outcome !== "REJECTED");
-  const saved = accepted.reduce((sum, d) => sum + Math.max(0, -d.networkDelaySec), 0);
+  // Prefer the backend counterfactual (delay a naive controller would have
+  // added vs. the AI's choices); fall back to the baseline−current difference.
+  const saved =
+    delayAvoidedSec ??
+    (baselineKpis ? Math.max(0, baselineKpis.totalDelaySec - kpis.totalDelaySec) : 0);
 
   const rows: [string, number, number][] = baselineKpis
     ? [

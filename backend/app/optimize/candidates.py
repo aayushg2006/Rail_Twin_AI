@@ -34,9 +34,11 @@ def generate(state: AnalyticState, conflict: Conflict) -> list[Candidate]:
     out: list[Candidate] = []
     a = fleet_by_id.get(conflict.train_a) if conflict.train_a else None
     b = fleet_by_id.get(conflict.train_b) if conflict.train_b else None
-    # The train that gives way is the lower-priority movement (higher number).
+    # The train that gives way is the lower economic-value movement (freight
+    # yields to a premium express; an empty rake yields to a priority freight),
+    # with operational priority as the tie-breaker.
     if a and b:
-        give = a if a.priority >= b.priority else b
+        give = a if (a.economic_weight, -a.priority) <= (b.economic_weight, -b.priority) else b
         keep = b if give is a else a
     else:
         give = a or b

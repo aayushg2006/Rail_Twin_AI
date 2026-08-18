@@ -11,8 +11,20 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
-import { TwinProvider } from "@/twin/store";
+import { TwinProvider, useTwin } from "@/twin/store";
 import { TopBar } from "@/components/ops/TopBar";
+
+/** Shown when the current window has no active trains, so an empty schematic is
+ *  never mistaken for a broken scenario/what-if. */
+function EmptyNetworkBanner() {
+  const { emptyNetwork, emptyNetworkReason } = useTwin();
+  if (!emptyNetwork) return null;
+  return (
+    <div className="border-b border-amber-500/40 bg-amber-500/10 px-4 py-1.5 text-center text-xs font-medium text-amber-300">
+      {emptyNetworkReason ?? "No trains are active in this window — advance the clock or step forward."}
+    </div>
+  );
+}
 
 function NotFoundComponent() {
   return (
@@ -130,6 +142,7 @@ function RootComponent() {
       <TwinProvider>
         <div className="flex h-screen min-h-0 flex-col bg-background">
           <TopBar />
+          <EmptyNetworkBanner />
           {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
           <Outlet />
         </div>

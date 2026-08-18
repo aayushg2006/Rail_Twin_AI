@@ -13,6 +13,7 @@ from .data import data_pack
 SCENARIO_IDS = [
     "BASE", "FREIGHT_DELAY", "EXPRESS_DELAY", "PLATFORM_UNAVAILABLE", "TRACK_BLOCKAGE",
     "SIGNAL_FAILURE", "TRAIN_BREAKDOWN", "YARD_CONGESTION", "PEAK_TRAFFIC", "MULTIPLE_DELAYS",
+    "BEST_CASE", "WORST_CASE",
 ]
 
 
@@ -63,9 +64,9 @@ def scenario_setup(scenario_id: str) -> ScenarioSetup:
         return ScenarioSetup(unavailable_routes=["RT-FRT-LOOP"])
     if scenario_id == "PEAK_TRAFFIC":
         return ScenarioSetup(overrides={
-            "L-90312": TrainOverride(start_shift=60),
-            "L-90455": TrainOverride(start_shift=90),
-            "K-91007": TrainOverride(start_shift=-40),
+            "L-93009": TrainOverride(start_shift=60),
+            "L-93008": TrainOverride(start_shift=90),
+            "L-93011": TrainOverride(start_shift=-40),
         })
     if scenario_id == "MULTIPLE_DELAYS":
         return ScenarioSetup(
@@ -74,5 +75,25 @@ def scenario_setup(scenario_id: str) -> ScenarioSetup:
                 "F-4271": TrainOverride(speed_kmh=26, nominal_speed_kmh=40),
             },
             headway_multiplier=1.5,
+        )
+    if scenario_id == "BEST_CASE":
+        # One clean JB conflict: the express and an ordinary freight meet at the
+        # goods turnout. The AI holds the low-value freight, protecting the
+        # express at near-zero passenger cost — a naive hold of the express would
+        # cost far more, so "delay avoided" is large and obvious.
+        return ScenarioSetup(overrides={"F-4271": TrainOverride(start_shift=40)})
+    if scenario_id == "WORST_CASE":
+        # Cascading contention: a late premium-ish express, two crawling freights,
+        # a withdrawn platform and doubled headway all at once. No single action
+        # clears everything; the optimizer still minimises total weighted delay
+        # and honestly reports the residual conflicts it cannot remove.
+        return ScenarioSetup(
+            overrides={
+                "E-12928": TrainOverride(start_shift=-120, speed_kmh=55),
+                "F-4271": TrainOverride(speed_kmh=24, nominal_speed_kmh=40),
+                "F-4273": TrainOverride(speed_kmh=22, nominal_speed_kmh=38),
+            },
+            blocked_resources=["PF6"],
+            headway_multiplier=2.0,
         )
     return ScenarioSetup()

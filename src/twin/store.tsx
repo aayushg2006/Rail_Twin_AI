@@ -94,6 +94,11 @@ interface TwinContextValue {
   scenario: ScenarioId;
   decisions: DecisionRecord[];
   baselineKpis: KPISet | null;
+  /** Cumulative delay a naive controller would have added vs. the AI's decisions. */
+  delayAvoidedSec: number | null;
+  /** True when the current window has no active trains (advance the clock). */
+  emptyNetwork: boolean;
+  emptyNetworkReason: string | null;
   /** Live link state to the backend brain. */
   connection: ConnectionState;
   /** Computed delay-dependency chain (backend), for the propagation panel. */
@@ -392,6 +397,9 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     scenario: sim.scenario,
     decisions,
     baselineKpis: bundle?.baselineKpis ?? baselineKpis,
+    delayAvoidedSec: bundle?.delayAvoidedSec ?? null,
+    emptyNetwork: bundle?.emptyNetwork ?? false,
+    emptyNetworkReason: bundle?.emptyNetworkReason ?? null,
     connection: source.connectionState(),
     causalChain: bundle?.causalChain ?? [],
     delayBuckets: bundle?.delayBuckets ?? {},

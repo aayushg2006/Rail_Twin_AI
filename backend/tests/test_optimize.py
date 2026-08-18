@@ -102,11 +102,10 @@ def test_human_in_loop_accept_modify_reject(monkeypatch):
     # ACCEPT: applies to the live twin.
     orch._decide({"conflictId": conflict.id, "action": action, "outcome": "ACCEPTED"})
     assert len(orch.engine.applied_actions) == n0 + 1
-    # MODIFY: a changed hold still applies.
-    mod = {"kind": "HOLD", "trainId": action["trainId"], "holdSec": 90}
+    # MODIFY: a hold too short to restore separation must be rejected by the
+    # live safety re-validation and never applied.
+    mod = {"kind": "HOLD", "trainId": action["trainId"], "holdSec": 5}
     orch._decide({"conflictId": conflict.id, "action": mod, "outcome": "MODIFIED"})
-    # The live re-validation may reject a modified hold that no longer clears
-    # the current conflict; unsafe modifications must not be applied.
     assert len(orch.engine.applied_actions) == n0 + 1
     assert orch._last_decision_status["status"] == "REJECTED"
     assert [d["outcome"] for d in logged] == ["REJECTED", "ACCEPTED", "REJECTED"]
@@ -120,3 +119,52 @@ def test_options_are_generated_for_every_predicted_conflict():
     from app.optimize.provider import build_options
     result = build_options(orch.engine, orch._cached_prediction)
     assert set(result["optionsByConflict"]) == {c.id for c in orch._cached_prediction.conflicts}
+
+
+def test_optimizer_protects_high_value_train():
+    """The AI must give way with the lower economic-value movement: at the JB
+    demo conflict the freight yields, the express is never held."""
+    astate, pred = _state_with_conflict()
+    conflict = next(c for c in pred.conflicts if c.resource_id == "JB")
+    result = OptimizationEngine().optimize(astate, conflict)
+    from app.network.fleet import fleet_by_id
+    held = result.selected.action.train_id
+    other = conflict.train_b if conflict.train_a == held else conflict.train_a
+    assert fleet_by_id[held].economic_weight <= fleet_by_id[other].economic_weight
+    # F-4271 (freight, weight 2) yields to E-12928 (express, weight 5).
+    assert held == "F-4271"
+
+
+def test_scenarios_produce_distinct_whatif_output():
+    """Different scenarios must yield different re-simulated options — the bug
+    where every scenario returned identical output must not regress."""
+    from app.optimize.provider import build_options
+
+    def jb_signature(scenario: str):
+        eng = SimulationEngine(scenario, seed=42)
+        eng.seek(70)
+        pred = predict(eng.analytic_state())
+        res = build_options(eng, pred)
+        jb = [c for c in pred.conflicts if c.resource_id == "JB"]
+        if not jb:
+            return ("no-jb", scenario)
+        opts = res["optionsByConflict"][jb[0].id]
+        return tuple(round(o["networkDelaySec"], 1) for o in opts)
+
+    assert jb_signature("FREIGHT_DELAY") != jb_signature("EXPRESS_DELAY")
+
+
+def test_counterfactual_baseline_never_below_current():
+    """Accepting the AI's minimal-cost decision records delay avoided, so the
+    baseline (naive controller) is >= the current delay."""
+    orch = SimulationOrchestrator("BASE")
+    orch._set_clock_mode("DEMO")
+    orch.engine.seek(70)
+    orch._refresh_derived()
+    conflict = next(c for c in orch._cached_prediction.conflicts if c.resource_id == "JB")
+    result = OptimizationEngine().optimize(orch.engine.analytic_state(), conflict)
+    orch._decide({"conflictId": conflict.id, "action": result.selected.action.as_dict(),
+                  "outcome": "ACCEPTED"})
+    bundle = orch._build_bundle()
+    assert bundle["delayAvoidedSec"] >= 0
+    assert bundle["baselineKpis"]["totalDelaySec"] >= bundle["kpis"]["totalDelaySec"]

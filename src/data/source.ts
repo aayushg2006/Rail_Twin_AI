@@ -38,6 +38,11 @@ export interface TwinBundle {
   prediction: Prediction;
   kpis: KPISet;
   baselineKpis?: KPISet | null;
+  /** Cumulative delay (s) a naive controller would have added vs. the AI's choices. */
+  delayAvoidedSec?: number;
+  /** True when no trains are active in the current window. */
+  emptyNetwork?: boolean;
+  emptyNetworkReason?: string;
   options?: OptionOutcome[];
   optionsByConflict?: Record<string, OptionOutcome[]>;
   recommendation?: Recommendation | null;

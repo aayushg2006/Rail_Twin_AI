@@ -29,7 +29,15 @@ class SimulationOrchestrator:
     def __init__(self, scenario_id: str = "BASE"):
         self.clock_mode = settings.clock_mode.upper()
         epoch = settings.demo_epoch_start_ms if self.clock_mode == "DEMO" else int(time.time() * 1000)
-        self.engine = SimulationEngine(scenario_id, seed=settings.seed, epoch_start_ms=epoch)
+        self.engine = SimulationEngine(scenario_id, seed=settings.seed, epoch_start_ms=epoch,
+                                       clock_mode=self.clock_mode)
+        # Counterfactual accounting: for every accepted decision we record how
+        # much extra (weighted) delay a naive controller would have incurred by
+        # NOT choosing the AI's minimal-cost resolution. baseline = current +
+        # this accumulated avoided delay, so RECORD shows the AI reducing delay.
+        self._avoided_network_sec = 0.0
+        self._avoided_passenger_sec = 0.0
+        self._avoided_freight_sec = 0.0
         self.playing = True
         self.speed = settings.default_speed
         self.horizon = settings.default_horizon_sec
@@ -89,8 +97,6 @@ class SimulationOrchestrator:
         astate = self.engine.analytic_state()
         self._cached_prediction = predict(astate, self.horizon)
         self._cached_kpis = compute_kpis(astate, self._cached_prediction)
-        if self._baseline_kpis is None:
-            self._baseline_kpis = dto.kpis_dict(self._cached_kpis)
         # CP-SAT options + ML predictions on the (coarser) derived cadence.
         opts: dict = {}
         if self.options_provider is not None:
@@ -105,9 +111,35 @@ class SimulationOrchestrator:
                 opts["mlError"] = str(exc)
         self._cached_options = opts
 
+    def _counterfactual_baseline(self, kpis_map: dict) -> dict:
+        """Baseline = current KPIs plus the delay a naive controller would have
+        added by not taking the AI's minimal-cost decisions. When nothing has
+        been decided yet this equals the current KPIs (no delay avoided)."""
+        base = dict(kpis_map)
+        trains = max(1, base.get("trainsTracked", 0) or 1)
+        base["totalDelaySec"] = round(base.get("totalDelaySec", 0.0) + self._avoided_network_sec, 1)
+        base["passengerDelaySec"] = round(base.get("passengerDelaySec", 0.0) + self._avoided_passenger_sec, 1)
+        base["freightDelaySec"] = round(base.get("freightDelaySec", 0.0) + self._avoided_freight_sec, 1)
+        base["latenessSec"] = base["totalDelaySec"]
+        base["signedVarianceSec"] = round(base["totalDelaySec"] - base.get("earlinessSec", 0.0), 1)
+        base["averageDelaySec"] = round(base["totalDelaySec"] / trains, 1)
+        return base
+
+    def _empty_network(self) -> tuple[bool, str]:
+        active = [rt for rt in self.engine.trains.values()
+                  if not rt.finished and rt.activation_at_sec <= self.engine.now]
+        if active:
+            return False, ""
+        scheduled = any(not rt.finished for rt in self.engine.trains.values())
+        if scheduled:
+            return True, "No trains are active yet in this window — advance the clock or step forward."
+        return True, "All services in this snapshot have completed for the day."
+
     def _build_bundle(self) -> dict:
         pred = self._cached_prediction
         kpis = self._cached_kpis
+        kpis_map = dto.kpis_dict(kpis)
+        empty, empty_reason = self._empty_network()
         bundle: dict = {
             "type": "snapshot",
             "connection": "CONNECTED",
@@ -115,8 +147,11 @@ class SimulationOrchestrator:
             "speed": self.speed,
             "simState": dto.sim_state_dict(self.engine),
             "prediction": dto.prediction_dict(pred),
-            "kpis": dto.kpis_dict(kpis),
-            "baselineKpis": self._baseline_kpis,
+            "kpis": kpis_map,
+            "baselineKpis": self._counterfactual_baseline(kpis_map),
+            "delayAvoidedSec": round(self._avoided_network_sec, 1),
+            "emptyNetwork": empty,
+            "emptyNetworkReason": empty_reason,
             "causalChain": dto.causal_chain_list(self.engine),
             "delayBuckets": dto.delay_buckets_map(self.engine),
             "dataPackId": data_pack["id"],
@@ -200,8 +235,12 @@ class SimulationOrchestrator:
 
     def _load(self, scenario_id: str) -> None:
         epoch = settings.demo_epoch_start_ms if self.clock_mode == "DEMO" else int(time.time() * 1000)
-        self.engine = SimulationEngine(scenario_id, seed=settings.seed, epoch_start_ms=epoch)
+        self.engine = SimulationEngine(scenario_id, seed=settings.seed, epoch_start_ms=epoch,
+                                       clock_mode=self.clock_mode)
         self._baseline_kpis = None
+        self._avoided_network_sec = 0.0
+        self._avoided_passenger_sec = 0.0
+        self._avoided_freight_sec = 0.0
         self.playing = True
         self.pending_scenario_events = []
         self.active_scenario_payload = None
@@ -269,6 +308,23 @@ class SimulationOrchestrator:
             self._apply_scenario_event(event)
             self.pending_scenario_events.remove(event)
 
+    def _avoided_for(self, conflict_id: str | None) -> tuple[float, float, float]:
+        """Delay a naive controller would have added vs. the AI's minimal-cost
+        choice for this conflict: (network, passenger, freight) seconds."""
+        opts = (self._cached_options.get("optionsByConflict") or {}).get(conflict_id or "", [])
+        viable = [o for o in opts if o.get("feasible") and o.get("conflictResolved")
+                  and (o.get("safety") or {}).get("passed")]
+        if len(viable) < 2:
+            return (0.0, 0.0, 0.0)
+        cost = lambda o: o.get("weightedDelaySec", o.get("networkDelaySec", 0.0))
+        ai = min(viable, key=cost)
+        naive = max(viable, key=cost)
+        return (
+            max(0.0, naive.get("networkDelaySec", 0.0) - ai.get("networkDelaySec", 0.0)),
+            max(0.0, naive.get("passengerDelaySec", 0.0) - ai.get("passengerDelaySec", 0.0)),
+            max(0.0, naive.get("freightDelaySec", 0.0) - ai.get("freightDelaySec", 0.0)),
+        )
+
     def _decide(self, msg: dict) -> None:
         outcome = msg.get("outcome", "REJECTED")
         action = _action(msg.get("action", {}))
@@ -299,8 +355,12 @@ class SimulationOrchestrator:
                     self.decision_hook({**msg, "outcome": "REJECTED", "reason": "UNSAFE", "simTimeSec": self.engine.now})
                 return
         if outcome != "REJECTED" and action.kind != "NO_ACTION":
+            avoided = self._avoided_for(msg.get("conflictId"))
             self.engine.apply_action(action)
             self._refresh_derived()
+            self._avoided_network_sec += avoided[0]
+            self._avoided_passenger_sec += avoided[1]
+            self._avoided_freight_sec += avoided[2]
             self._last_decision_status = {"status": outcome, "reason": "Applied after live safety revalidation"}
         elif outcome == "REJECTED":
             self._last_decision_status = {"status": "REJECTED", "reason": msg.get("note", "Rejected by controller")}

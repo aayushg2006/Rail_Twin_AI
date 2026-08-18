@@ -24,13 +24,16 @@ def option_cost(ev: OptionEval, w: ObjectiveWeights | None = None) -> float:
     # Lexicographic surrogate: safety/residual conflicts are hard constraints in
     # the solver, then throughput, then positive lateness. A faster what-if must
     # never receive a fake benefit merely because a signed value became negative.
-    passenger_component = max(0.0, ev.passenger_delay_sec) * w.passenger_vs_freight
-    freight_component = max(0.0, ev.freight_delay_sec)
+    #
+    # `weighted_delay_sec` already sums each train's added delay times its
+    # economic weight, so premium passenger and priority-freight lateness
+    # dominates the cost and the solver protects the highest-revenue movements.
     positive_network = max(0.0, ev.network_delay_sec)
+    positive_weighted = max(0.0, ev.weighted_delay_sec)
     return (
         w.conflict * 1_000_000 * ev.residual_conflicts
-        - 1_000_000 * ev.throughput_delta
-        + w.delay * (positive_network + passenger_component + freight_component)
+        - w.throughput * ev.throughput_weight_delta
+        + w.delay * (positive_network + positive_weighted)
         + w.route * route_change
         + w.hold * hold_sec
     )

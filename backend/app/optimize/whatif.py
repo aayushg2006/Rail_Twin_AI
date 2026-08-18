@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from ..config import settings
-from ..network.fleet import fleet_by_id
+from ..network.fleet import economic_weight, fleet_by_id
 from ..twin.predict import (AnalyticState, Conflict, apply_action, predict,
                             project_finish)
 from ..twin.state import AppliedAction
@@ -31,7 +31,9 @@ class OptionEval:
     network_delay_sec: float
     passenger_delay_sec: float
     freight_delay_sec: float
+    weighted_delay_sec: float
     throughput_delta: int
+    throughput_weight_delta: float
     infrastructure_change: str
     safety: dict
     residual_conflicts: int
@@ -47,6 +49,7 @@ class OptionEval:
             "networkDelaySec": round(self.network_delay_sec, 1),
             "passengerDelaySec": round(self.passenger_delay_sec, 1),
             "freightDelaySec": round(self.freight_delay_sec, 1),
+            "weightedDelaySec": round(self.weighted_delay_sec, 1),
             "throughputDelta": self.throughput_delta,
             "infrastructureChange": self.infrastructure_change,
             "safety": self.safety,
@@ -73,10 +76,22 @@ def throughput_within(state: AnalyticState, horizon: float) -> int:
     return count
 
 
+def weighted_throughput_within(state: AnalyticState, horizon: float) -> float:
+    """Throughput measured in economic weight: clearing a premium express within
+    the horizon is worth far more than clearing an empty rake, so the optimizer
+    never sacrifices a high-value movement to squeeze a low-value one through."""
+    total = 0.0
+    for tid in state.trains:
+        t = project_finish(state, tid)
+        if t is not None and t <= horizon:
+            total += economic_weight(tid)
+    return total
+
+
 def evaluate(base: AnalyticState, base_delays: dict[str, float], cand: Candidate,
              conflict: Conflict, horizon: float = HORIZON) -> OptionEval:
     if cand.infeasible_reason:
-        return OptionEval(cand.id, cand.letter, cand.title, cand.action, False, {}, 0, 0, 0, 0,
+        return OptionEval(cand.id, cand.letter, cand.title, cand.action, False, {}, 0, 0, 0, 0, 0, 0.0,
                           cand.infrastructure_change, {"passed": False, "checks": []}, 0, False,
                           cand.infeasible_reason)
 
@@ -95,13 +110,18 @@ def evaluate(base: AnalyticState, base_delays: dict[str, float], cand: Candidate
     resolved = not still
     after_delays = delay_profile(after)
     added: dict[str, float] = {}
-    network = passenger = freight = 0.0
+    network = passenger = freight = weighted = 0.0
     for tid in base.trains:
         d = after_delays.get(tid, 0.0) - base_delays.get(tid, 0.0)
         if abs(d) < 1:
             continue
         added[tid] = d
         network += d
+        # Per-train economic weighting: a delay to a premium/high-value movement
+        # costs the network far more than the same delay to an empty rake. This
+        # is what makes the recommendation protect Rajdhani/Vande Bharat and
+        # priority freight while letting low-value movements give way.
+        weighted += d * economic_weight(tid)
         if fleet_by_id[tid].type == "FREIGHT":
             freight += d
         else:
@@ -109,8 +129,9 @@ def evaluate(base: AnalyticState, base_delays: dict[str, float], cand: Candidate
     residual = sum(1 for c in pred.conflicts if c.severity == "CRITICAL")
     base_thru = throughput_within(base, horizon)
     after_thru = throughput_within(after, horizon)
+    wthru_delta = weighted_throughput_within(after, horizon) - weighted_throughput_within(base, horizon)
     return OptionEval(
         cand.id, cand.letter, cand.title, cand.action, resolved, added,
-        network, passenger, freight, after_thru - base_thru,
+        network, passenger, freight, weighted, after_thru - base_thru, wthru_delta,
         cand.infrastructure_change, validate(cand.action, after, conflict, resolved),
         residual, True)

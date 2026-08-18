@@ -87,6 +87,23 @@ export function scenarioSetup(id: ScenarioId): ScenarioSetup {
         },
         headwayMultiplier: 1.5,
       };
+    case "BEST_CASE":
+      // One clean JB conflict: the AI holds the low-value freight so the express
+      // keeps its path at near-zero passenger cost (mirrors backend).
+      return { ...base, overrides: { "F-4271": { startShift: 40 } } };
+    case "WORST_CASE":
+      // Cascading contention that cannot be fully cleared: late express, two
+      // crawling freights, a withdrawn platform and doubled headway.
+      return {
+        ...base,
+        overrides: {
+          "E-12928": { startShift: -120, speedKmh: 55 },
+          "F-4271": { speedKmh: 24, nominalSpeedKmh: 40 },
+          "F-4273": { speedKmh: 22, nominalSpeedKmh: 38 },
+        },
+        blockedResources: ["PF6"],
+        headwayMultiplier: 2,
+      };
     default:
       return base;
   }
@@ -98,10 +115,30 @@ function secondsSinceMidnight(epochMs: number): number {
   return (utc + 5.5 * 3600) % 86400;
 }
 
-export function initialTrainStates(id: ScenarioId, epochStartMs = Date.now()): Record<string, TrainState> {
+// Active window of the fixed daily snapshot (earliest..latest departure). LIVE
+// mode folds any real time-of-day into this window so the console is populated
+// at any hour instead of showing an all-completed network (mirrors backend).
+const departures = fleet.map((f) => f.scheduledDepartureSec ?? 0).filter((s) => s > 0);
+export const WINDOW_START = departures.length ? Math.min(...departures) : 0;
+export const WINDOW_END = departures.length ? Math.max(...departures) : 86400;
+
+export function remapIntoWindow(serviceSeconds: number): number {
+  const span = WINDOW_END - WINDOW_START;
+  if (span <= 0 || (serviceSeconds >= WINDOW_START && serviceSeconds <= WINDOW_END)) {
+    return serviceSeconds;
+  }
+  return WINDOW_START + (((serviceSeconds - WINDOW_START) % span) + span) % span;
+}
+
+export function initialTrainStates(
+  id: ScenarioId,
+  epochStartMs = Date.now(),
+  clockMode: "LIVE" | "DEMO" = "DEMO",
+): Record<string, TrainState> {
   const setup = scenarioSetup(id);
   const out: Record<string, TrainState> = {};
-  const nowSec = secondsSinceMidnight(epochStartMs);
+  const rawSec = secondsSinceMidnight(epochStartMs);
+  const nowSec = clockMode === "LIVE" ? remapIntoWindow(rawSec) : rawSec;
   for (const f of fleet) {
     const ov = setup.overrides[f.id] ?? {};
     const s = Math.max(0, startS(f.routeId, f.start) + (ov.startShift ?? 0));

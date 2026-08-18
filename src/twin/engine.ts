@@ -47,13 +47,24 @@ export interface SimState {
   serviceDate: string;
 }
 
-export function createSimState(scenario: ScenarioId, epochStartMs: number): SimState {
+/** Snapshot instant that pins the DEMO clock inside the active window
+ *  (2026-08-15T16:44:00+05:30). Matches settings.demo_epoch_start_ms. */
+export const DEMO_EPOCH_MS = 1_786_792_440_000;
+
+export function createSimState(
+  scenario: ScenarioId,
+  epochStartMs: number,
+  clockMode: ClockMode = "DEMO",
+): SimState {
   const setup = scenarioSetup(scenario);
+  // DEMO pins the clock into the snapshot window; LIVE keeps the real epoch
+  // (initialTrainStates folds its time-of-day into the window) so neither is empty.
+  const effectiveEpoch = clockMode === "DEMO" ? DEMO_EPOCH_MS : epochStartMs;
   return {
     simTimeSec: 0,
-    epochStartMs,
+    epochStartMs: effectiveEpoch,
     lastUpdateSec: 0,
-    trains: initialTrainStates(scenario, epochStartMs),
+    trains: initialTrainStates(scenario, effectiveEpoch, clockMode),
     scenario,
     routeOverrides: {},
     blockedResources: setup.blockedResources,
@@ -61,9 +72,9 @@ export function createSimState(scenario: ScenarioId, epochStartMs: number): SimS
     unavailableRoutes: setup.unavailableRoutes,
     appliedActions: [],
     respawnAt: {},
-    clockMode: "LIVE",
-    wallClockMs: epochStartMs,
-    serviceDate: new Date(epochStartMs).toISOString().slice(0, 10),
+    clockMode,
+    wallClockMs: effectiveEpoch,
+    serviceDate: new Date(effectiveEpoch).toISOString().slice(0, 10),
   };
 }
 
@@ -80,7 +91,14 @@ export function cloneState(s: SimState): SimState {
 }
 
 export function routeFor(state: SimState, trainId: string): RailRoute {
-  const id = state.routeOverrides[trainId] ?? fleetById[trainId]!.routeId;
+  const entry = fleetById[trainId];
+  if (!entry) {
+    // Defensive: an unknown train id (e.g. a stale frame during a scenario
+    // swap) must never crash the whole console. Fall back to the first route.
+    if (typeof console !== "undefined") console.warn("routeFor: unknown train id", trainId);
+    return routeById[state.routeOverrides[trainId] ?? Object.keys(routeById)[0]!]!;
+  }
+  const id = state.routeOverrides[trainId] ?? entry.routeId;
   return routeById[id]!;
 }
 
@@ -467,11 +485,15 @@ function outcomeFor(
   let network = 0;
   let passenger = 0;
   let freight = 0;
+  let weighted = 0;
   for (const f of fleet) {
     const d = (afterDelays[f.id] ?? 0) - (baseDelays[f.id] ?? 0);
     if (Math.abs(d) < 1) continue;
     addedDelaySec[f.id] = d;
     network += d;
+    // Per-train economic weighting: delaying a premium/high-value movement
+    // costs far more than delaying an empty rake (mirrors the backend).
+    weighted += d * economicWeight(f.id);
     if (f.type === "FREIGHT") freight += d;
     else passenger += d;
   }
@@ -487,6 +509,7 @@ function outcomeFor(
     networkDelaySec: network,
     passengerDelaySec: passenger,
     freightDelaySec: freight,
+    weightedDelaySec: weighted,
     throughputDelta: afterThroughput - baseThroughput,
     infrastructureChange,
     safety: safetyFor(action, after, conflict, resolved),
@@ -504,6 +527,24 @@ function throughputWithin(state: SimState, horizonSec: number): number {
   return count;
 }
 
+const DEFAULT_CLASS_WEIGHTS: Record<string, number> = {
+  EXPRESS: 5,
+  PASSENGER: 4,
+  LOCAL: 3,
+  MEMU: 3,
+  FREIGHT: 2,
+  SHUNT: 0.5,
+};
+
+/** Revenue/importance weight for a train (mirrors backend network/fleet.py). */
+export function economicWeight(trainId: string): number {
+  const f = fleetById[trainId];
+  if (!f) return 1;
+  if (typeof f.economicWeight === "number") return f.economicWeight;
+  return DEFAULT_CLASS_WEIGHTS[f.type] ?? 1;
+}
+
+
 /** Required extra separation to clear the conflict, seconds. */
 function neededGap(conflict: Conflict): number {
   return Math.ceil(conflict.requiredSeparationSec - conflict.separationSec) + 20;
@@ -519,8 +560,14 @@ export function generateOptions(
 
   const a = conflict.trainA ? fleetById[conflict.trainA] : undefined;
   const b = conflict.trainB ? fleetById[conflict.trainB] : undefined;
-  // The train that gives way is the lower-priority movement (higher number).
-  const giveWay = a && b ? (a.priority >= b.priority ? a : b) : (a ?? b);
+  // The train that gives way is the lower economic-value movement (a freight
+  // yields to a premium express), with operational priority as the tie-breaker.
+  const yields = (x: typeof a, y: typeof b) => {
+    const wx = economicWeight(x!.id), wy = economicWeight(y!.id);
+    if (wx !== wy) return wx < wy;
+    return x!.priority >= y!.priority;
+  };
+  const giveWay = a && b ? (yields(a, b) ? a : b) : (a ?? b);
   const keep = a && b ? (giveWay === a ? b : a) : undefined;
   if (!giveWay) return options;
 
@@ -696,25 +743,31 @@ export function recommend(
 ): Recommendation | null {
   const viable = options.filter((o) => o.feasible && o.conflictResolved && o.safety.passed);
   if (viable.length === 0) return null;
-  // Passenger delay is weighted three times freight delay: passenger impact
-  // dominates network cost at a suburban junction.
+  // Delay is weighted per train by economic value, so a premium/express delay
+  // dominates the cost and the low-value movement gives way. Throughput is a
+  // secondary reward, never large enough to override protecting a high-value
+  // train (mirrors the backend objective).
+  const weightedOf = (o: OptionOutcome) =>
+    o.weightedDelaySec ?? Math.max(0, o.passengerDelaySec) * 3 + Math.max(0, o.freightDelaySec);
   const score = (o: OptionOutcome) =>
-    -o.throughputDelta * 1_000_000 +
+    -o.throughputDelta * 300 +
     Math.max(0, o.networkDelaySec) +
-    Math.max(0, o.passengerDelaySec) * 3 +
-    Math.max(0, o.freightDelaySec) +
+    Math.max(0, weightedOf(o)) +
     (o.infrastructureChange === "NONE" ? 0 : 60);
   const best = [...viable].sort((x, y) => score(x) - score(y))[0]!;
   const others = viable.filter((o) => o.id !== best.id);
   const keepTrain = conflict.trainA === best.action.trainId ? conflict.trainB : conflict.trainA;
   const keep = fleetById[keepTrain];
   const give = fleetById[best.action.trainId];
+  const clsOf = (t: typeof keep) => (t?.serviceClass ?? t?.type ?? "").toLowerCase().replace(/_/g, " ");
   return {
     conflictId: conflict.id,
     optionId: best.id,
     rationale:
       keep && give
-        ? `${keep.id} (${keep.type.toLowerCase()}, priority ${keep.priority}) carries the higher passenger impact and is closer to ${conflict.resourceLabel}. ${give.id} (${give.type.toLowerCase()}, priority ${give.priority}) can give way at the lowest network cost.`
+        ? economicWeight(keep.id) >= economicWeight(give.id)
+          ? `${keep.id} (${clsOf(keep)}, economic weight ${economicWeight(keep.id)}) is the higher-value movement over ${conflict.resourceLabel}, so ${give.id} (${clsOf(give)}, economic weight ${economicWeight(give.id)}) gives way at the lowest network cost.`
+          : `Holding ${give.id} (${clsOf(give)}, economic weight ${economicWeight(give.id)}) clears ${conflict.resourceLabel} at the lowest network cost; ${keep.id} (${clsOf(keep)}, economic weight ${economicWeight(keep.id)}) keeps its path.`
         : `Applies the lowest-cost feasible regulation for ${conflict.resourceLabel}.`,
     expectedOutcome: `${conflict.kind.replace(/_/g, " ").toLowerCase()} cleared; separation restored to at least ${Math.round(conflict.requiredSeparationSec)} s over ${conflict.resourceId}.`,
     alternatives: others.map(

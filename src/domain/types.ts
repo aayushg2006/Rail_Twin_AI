@@ -113,8 +113,12 @@ export interface Train {
   number: string;
   name: string;
   type: TrainType;
-  /** 1 = highest operational priority. */
+  /** 1 = highest operational priority (0 = premium: Rajdhani / Vande Bharat). */
   priority: number;
+  /** Relative revenue/importance the optimizer protects (higher = costlier to delay). */
+  economicWeight?: number;
+  /** Display class: PREMIUM, EXPRESS, SUBURBAN, PREMIUM_FREIGHT, FREIGHT, SHUNT, … */
+  serviceClass?: string;
   routeId: string;
   origin: string;
   destination: string;
@@ -281,6 +285,8 @@ export interface OptionOutcome {
   networkDelaySec: number;
   passengerDelaySec: number;
   freightDelaySec: number;
+  /** Sum of per-train added delay × economic weight — protects high-value trains. */
+  weightedDelaySec?: number;
   throughputDelta: number;
   infrastructureChange: "NONE" | "LOW" | "MEDIUM";
   safety: SafetyValidation;
@@ -347,6 +353,8 @@ export type ScenarioId =
   | "YARD_CONGESTION"
   | "PEAK_TRAFFIC"
   | "MULTIPLE_DELAYS"
+  | "BEST_CASE"
+  | "WORST_CASE"
   | (string & {});
 
 export interface ScenarioDefinition {
