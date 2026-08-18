@@ -33,6 +33,10 @@ class AnalyticTrain:
     finished: bool
     priority: int
     ttype: str
+    scheduled_departure_sec: int = 0
+    activation_at_sec: float = 0.0
+    source: str = ""
+    provenance: str = ""
 
 
 @dataclass
@@ -90,7 +94,7 @@ def project_arrival(state: AnalyticState, tid: str, s_target: float) -> float | 
     if s_target < st.s - 1:
         return None
     v = kmh_to_units_per_sec(max(1.0, st.speed_kmh))
-    t = st.hold_remaining + st.dwell_remaining
+    t = max(0.0, st.activation_at_sec - state.sim_time) + st.hold_remaining + st.dwell_remaining
     d = st.s
     for i in range(st.next_stop_index, len(route.stops)):
         stop = route.stops[i]
@@ -131,6 +135,8 @@ def analytic_tick(state: AnalyticState, dt: float) -> None:
     state.sim_time += dt
     for st in state.trains.values():
         if st.finished:
+            continue
+        if state.sim_time < st.activation_at_sec:
             continue
         route = route_by_id[st.route_id]
         length = _route_length(st.route_id)

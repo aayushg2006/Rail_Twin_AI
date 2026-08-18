@@ -7,6 +7,7 @@ environment variables (optionally a .env file) via pydantic-settings.
 from __future__ import annotations
 
 from functools import lru_cache
+import time
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -39,11 +40,13 @@ class Settings(BaseSettings):
 
     # --- Simulation ---
     # Epoch the sim clock starts from (matches the frontend seed in store.tsx).
-    epoch_start_ms: int = 1_772_882_040_000  # 2026-03-11T16:44:00+05:30
+    epoch_start_ms: int = Field(default_factory=lambda: int(time.time() * 1000))
+    clock_mode: str = "LIVE"
+    demo_epoch_start_ms: int = 1_786_792_440_000  # 2026-08-15T16:44:00+05:30
     tick_seconds: float = 0.25               # broadcast cadence (sim advances speed*tick)
     default_horizon_sec: int = 900           # 15 min prediction horizon
     respawn_gap_sec: int = 150
-    default_speed: int = 5                   # 1 / 5 / 10 / 20
+    default_speed: int = 1                   # live mode is wall-clock 1x
 
     # --- What-if / optimization ---
     whatif_horizon_sec: int = 1200           # 20 min default (allow 10/20/30)

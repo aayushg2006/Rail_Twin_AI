@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from .data import data_pack
+
 SCENARIO_IDS = [
     "BASE", "FREIGHT_DELAY", "EXPRESS_DELAY", "PLATFORM_UNAVAILABLE", "TRACK_BLOCKAGE",
     "SIGNAL_FAILURE", "TRAIN_BREAKDOWN", "YARD_CONGESTION", "PEAK_TRAFFIC", "MULTIPLE_DELAYS",
@@ -22,26 +24,8 @@ class ScenarioDefinition:
 
 
 scenarios: list[ScenarioDefinition] = [
-    ScenarioDefinition("BASE", "Base demo scenario",
-                       "Express 12928 works PF 6 then the Diva branch while goods 4271 runs the north chord to the same turnout."),
-    ScenarioDefinition("FREIGHT_DELAY", "Freight running late",
-                       "Goods 4271 loses time on the chord and arrives into the turnout window later."),
-    ScenarioDefinition("EXPRESS_DELAY", "Express running late",
-                       "Express 12928 enters 6 minutes down and holds PF 6 longer."),
-    ScenarioDefinition("PLATFORM_UNAVAILABLE", "PF 6 unavailable",
-                       "PF 6 withdrawn from service; Diva-bound expresses must be re-planned."),
-    ScenarioDefinition("TRACK_BLOCKAGE", "Branch block BR-1 blocked",
-                       "Diva-bound branch block taken out of service by a permanent-way team."),
-    ScenarioDefinition("SIGNAL_FAILURE", "Signal failure at JB",
-                       "Turnout worked under caution; separation over JB doubles."),
-    ScenarioDefinition("TRAIN_BREAKDOWN", "Goods brake defect",
-                       "Goods 4271 restricted to 20 km/h on the chord."),
-    ScenarioDefinition("YARD_CONGESTION", "Goods yard congestion",
-                       "Goods loop occupied; the loop alternative is not available."),
-    ScenarioDefinition("PEAK_TRAFFIC", "Peak suburban traffic",
-                       "Suburban services closed up on the slow and fast pairs."),
-    ScenarioDefinition("MULTIPLE_DELAYS", "Multiple simultaneous delays",
-                       "Express late, goods restricted and PF 6 under pressure at once."),
+    ScenarioDefinition(s["id"], s["label"], s["description"])
+    for s in data_pack["scenarios"]
 ]
 
 scenario_by_id: dict[str, ScenarioDefinition] = {s.id: s for s in scenarios}

@@ -86,6 +86,7 @@ def test_safety_validator_flags_blocked_resource():
 
 def test_human_in_loop_accept_modify_reject(monkeypatch):
     orch = SimulationOrchestrator("BASE")
+    orch._set_clock_mode("DEMO")
     orch.engine.seek(70)
     orch._refresh_derived()
     logged = []
@@ -104,5 +105,18 @@ def test_human_in_loop_accept_modify_reject(monkeypatch):
     # MODIFY: a changed hold still applies.
     mod = {"kind": "HOLD", "trainId": action["trainId"], "holdSec": 90}
     orch._decide({"conflictId": conflict.id, "action": mod, "outcome": "MODIFIED"})
-    assert len(orch.engine.applied_actions) == n0 + 2
-    assert [d["outcome"] for d in logged] == ["REJECTED", "ACCEPTED", "MODIFIED"]
+    # The live re-validation may reject a modified hold that no longer clears
+    # the current conflict; unsafe modifications must not be applied.
+    assert len(orch.engine.applied_actions) == n0 + 1
+    assert orch._last_decision_status["status"] == "REJECTED"
+    assert [d["outcome"] for d in logged] == ["REJECTED", "ACCEPTED", "REJECTED"]
+
+
+def test_options_are_generated_for_every_predicted_conflict():
+    orch = SimulationOrchestrator("BASE")
+    orch._set_clock_mode("DEMO")
+    orch.engine.seek(70)
+    orch._refresh_derived()
+    from app.optimize.provider import build_options
+    result = build_options(orch.engine, orch._cached_prediction)
+    assert set(result["optionsByConflict"]) == {c.id for c in orch._cached_prediction.conflicts}

@@ -18,7 +18,16 @@ def test_trains_move_no_teleport():
     start = {t: rt.s for t, rt in eng.trains.items()}
     eng.seek(120)
     moved = [t for t, rt in eng.trains.items() if abs(rt.s - start[t]) > 1]
-    assert len(moved) >= 5  # most trains have advanced
+    # Timetable-gated services may remain SCHEDULED; active services must move.
+    assert len(moved) >= 3
+
+
+def test_future_services_remain_scheduled_until_departure():
+    eng = SimulationEngine("BASE", seed=42)
+    scheduled = [rt for rt in eng.trains.values() if rt.status.value == "SCHEDULED"]
+    assert scheduled
+    eng.seek(min(rt.activation_at_sec for rt in scheduled) - 1)
+    assert any(rt.status.value == "SCHEDULED" for rt in eng.trains.values())
 
 
 def test_delay_buckets_never_exceed_total():

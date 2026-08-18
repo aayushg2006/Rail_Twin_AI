@@ -22,6 +22,7 @@ export function Timeline() {
     stepForward,
     jumpToNextEvent,
     prediction,
+    clockMode,
   } = useTwin();
 
   const conflicts = prediction.conflicts.filter((c) => c.etaSec <= 900);
@@ -33,7 +34,7 @@ export function Timeline() {
           {playing ? "Pause" : "Run"}
         </Btn>
         {([1, 2, 5, 10] as SimSpeed[]).map((s) => (
-          <Btn key={s} active={speed === s} onClick={() => setSpeed(s)}>
+          <Btn key={s} active={speed === s} disabled={clockMode === "LIVE" && s !== 1} onClick={() => setSpeed(s)}>
             {s}×
           </Btn>
         ))}

@@ -21,6 +21,8 @@ def _operational_state(rt: TrainRuntime) -> str:
     """Map rich internal status -> frontend TrainOperationalState."""
     if rt.finished:
         return "CLEARED"
+    if rt.status == TrainStatus.SCHEDULED:
+        return "SCHEDULED"
     if rt.status in (TrainStatus.DWELLING, TrainStatus.ARRIVING):
         return "DWELL"
     if rt.status in (TrainStatus.HELD, TrainStatus.WAITING):
@@ -45,6 +47,11 @@ def train_state_dict(rt: TrainRuntime, now: float) -> dict:
         "nextStopIndex": rt.next_stop_index,
         "holdRemainingSec": round(rt.hold_remaining(now), 1),
         "delaySec": round(rt.delays.total, 1),
+        "scheduledDepartureSec": rt.scheduled_departure_sec,
+        "activationAtSec": round(rt.activation_at_sec, 1),
+        "latenessSec": round(rt.delays.total, 1),
+        "earlinessSec": 0.0,
+        "signedVarianceSec": round(rt.delays.total, 1),
         "finished": rt.finished,
     }
 
@@ -55,7 +62,7 @@ def sim_state_dict(eng: SimulationEngine) -> dict:
                  if rt.route_id != fleet_by_id[tid].route_id}
     return {
         "simTimeSec": round(now, 3),
-        "epochStartMs": settings.epoch_start_ms,
+        "epochStartMs": eng.epoch_start_ms,
         "lastUpdateSec": round(now, 3),
         "trains": {tid: train_state_dict(rt, now) for tid, rt in eng.trains.items()},
         "scenario": eng.scenario_id,
@@ -102,6 +109,10 @@ def kpis_dict(k: KPISet) -> dict:
         "onTimePercent": round(k.on_time_percent, 2),
         "recoveryTimeSec": k.recovery_time_sec,
         "predictedConflicts": k.predicted_conflicts,
+        "latenessSec": round(k.lateness_sec, 1),
+        "earlinessSec": round(k.earliness_sec, 1),
+        "signedVarianceSec": round(k.signed_variance_sec, 1),
+        "missedServices": k.missed_services,
     }
 
 

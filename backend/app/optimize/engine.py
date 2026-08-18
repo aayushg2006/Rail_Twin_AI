@@ -67,7 +67,10 @@ class OptimizationEngine:
             costs = {i: int(round(option_cost(evals[i], self.weights))) for i in feasible_idx}
             model.Minimize(sum(costs[i] * x[i] for i in feasible_idx))
             solver = cp_model.CpSolver()
-            solver.parameters.max_time_in_seconds = 1.0
+            # One conflict must never monopolize the live event loop. The
+            # candidate evaluations are deterministic; CP-SAT only chooses
+            # among them and is bounded tightly for real-time refreshes.
+            solver.parameters.max_time_in_seconds = 0.05
             status = solver.Solve(model)
             if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
                 chosen = next(i for i in feasible_idx if solver.Value(x[i]) == 1)

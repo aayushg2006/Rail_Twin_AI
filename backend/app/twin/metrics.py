@@ -28,6 +28,10 @@ class KPISet:
     on_time_percent: float
     recovery_time_sec: float | None
     predicted_conflicts: int = 0
+    lateness_sec: float = 0.0
+    earliness_sec: float = 0.0
+    signed_variance_sec: float = 0.0
+    missed_services: int = 0
 
 
 def occupied_platforms(state: AnalyticState) -> dict[str, str]:
@@ -43,7 +47,7 @@ def occupied_platforms(state: AnalyticState) -> dict[str, str]:
 
 
 def compute_kpis(state: AnalyticState, prediction: Prediction) -> KPISet:
-    active = [st for st in state.trains.values() if not st.finished]
+    active = [st for st in state.trains.values() if not st.finished and st.activation_at_sec <= state.sim_time]
     total = sum(st.delay_sec for st in active)
     passenger = sum(st.delay_sec for st in active if st.ttype not in ("FREIGHT", "SHUNT"))
     freight = sum(st.delay_sec for st in active if st.ttype == "FREIGHT")
@@ -62,6 +66,8 @@ def compute_kpis(state: AnalyticState, prediction: Prediction) -> KPISet:
         worst = max(c.required_separation_sec - c.separation_sec for c in prediction.conflicts)
         recovery = round(worst + (state.headway_multiplier - 1) * 120)
 
+    lateness = total
+    earliness = 0.0
     return KPISet(
         active_conflicts=critical,
         trains_tracked=len(active),
@@ -74,4 +80,8 @@ def compute_kpis(state: AnalyticState, prediction: Prediction) -> KPISet:
         on_time_percent=(on_time / len(active) * 100) if active else 0.0,
         recovery_time_sec=recovery,
         predicted_conflicts=warnings,
+        lateness_sec=lateness,
+        earliness_sec=earliness,
+        signed_variance_sec=lateness - earliness,
+        missed_services=max(0, len(active) - cleared),
     )

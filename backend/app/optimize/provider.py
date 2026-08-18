@@ -5,16 +5,12 @@ from __future__ import annotations
 from ..twin.predict import Prediction
 from .engine import OptimizationEngine
 
-_MAX_CONFLICTS = 3   # bound what-if cost per refresh
-
-
 def build_options(engine, prediction: Prediction) -> dict:
     astate = engine.analytic_state()
     opt = OptimizationEngine()
     options_by_conflict: dict[str, list] = {}
     rec_by_conflict: dict[str, dict | None] = {}
-    top = prediction.conflicts[:_MAX_CONFLICTS]
-    for c in top:
+    for c in prediction.conflicts:
         result = opt.optimize(astate, c)
         options_by_conflict[c.id] = [e.as_dict() for e in opt.rank_actions(result.options)]
         rec_by_conflict[c.id] = result.recommendation
@@ -22,9 +18,37 @@ def build_options(engine, prediction: Prediction) -> dict:
         "optionsByConflict": options_by_conflict,
         "recommendationByConflict": rec_by_conflict,
     }
-    if top:
-        out["options"] = options_by_conflict[top[0].id]
-        out["recommendation"] = rec_by_conflict[top[0].id]
+    if prediction.conflicts:
+        first = prediction.conflicts[0]
+        out["options"] = options_by_conflict.get(first.id, [])
+        out["recommendation"] = rec_by_conflict.get(first.id)
+
+    selected = []
+    used_trains: set[str] = set()
+    cleared: list[str] = []
+    for c in prediction.conflicts:
+        rec = rec_by_conflict.get(c.id)
+        if not rec:
+            continue
+        option = next((o for o in options_by_conflict[c.id] if o["id"] == rec["optionId"]), None)
+        train_id = option["action"].get("trainId") if option else None
+        if not option or train_id in used_trains:
+            continue
+        selected.append(option["action"])
+        used_trains.add(train_id or "")
+        if option.get("conflictResolved"):
+            cleared.append(c.id)
+    out["globalPlan"] = {
+        "id": f"PLAN-{engine.now:.0f}",
+        "status": "COMPLETE" if len(cleared) == len(prediction.conflicts) else "PARTIAL" if selected else "NO_SAFE_PLAN",
+        "actions": selected,
+        "clearedConflicts": cleared,
+        "residualConflicts": [c.id for c in prediction.conflicts if c.id not in cleared],
+        "networkDelaySec": 0,
+        "throughputDelta": 0,
+        "rationale": "Safe per-conflict options combined by train dependency; controller approval required.",
+    }
+    out["globalPlanStatus"] = out["globalPlan"]["status"]
     return out
 
 

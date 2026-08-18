@@ -5,6 +5,7 @@ from fastapi import APIRouter, Request
 
 from ..domain import dto
 from ..network.scenarios import scenarios
+from ..network.data import data_pack
 from ..network.topology import (junctions, platforms, resources, routes,
                                 signals, station_ticks, tracks)
 
@@ -22,6 +23,12 @@ async def health(request: Request) -> dict:
 @router.get("/scenarios")
 async def list_scenarios() -> list[dict]:
     return [{"id": s.id, "label": s.label, "description": s.description} for s in scenarios]
+
+
+@router.get("/data-pack")
+async def get_data_pack() -> dict:
+    """Expose schedule provenance and normalized services for the console."""
+    return data_pack
 
 
 @router.get("/state")

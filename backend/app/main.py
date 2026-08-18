@@ -26,6 +26,15 @@ async def lifespan(app: FastAPI):
         app.state.audit = AuditStore(settings.database_url)
         await app.state.audit.connect()
         orch.decision_hook = app.state.audit.record_sync
+        orch.scenario_store = app.state.audit
+        orch.persistence_status = "POSTGRES" if app.state.audit._pool is not None else "IN_MEMORY"
+        saved = await app.state.audit.load_scenario()
+        if saved:
+            if saved.get("clockMode") in ("LIVE", "DEMO"):
+                orch._set_clock_mode(saved["clockMode"])
+            payload = saved.get("payload") or {}
+            if payload.get("events"):
+                orch._load_custom(payload)
     # Optimisation (CP-SAT) provider.
     with contextlib.suppress(Exception):
         from .optimize.provider import attach_optimizer
@@ -42,7 +51,9 @@ async def lifespan(app: FastAPI):
     finally:
         await orch.stop()
         with contextlib.suppress(Exception):
-            await app.state.audit.close()
+            audit = getattr(app.state, "audit", None)
+            if audit:
+                await audit.close()
 
 
 app = FastAPI(title="RAIL-TWIN", version="0.1.0", lifespan=lifespan)

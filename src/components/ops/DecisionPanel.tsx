@@ -5,7 +5,7 @@ import { mmss, signedMin } from "@/twin/format";
 import { Btn, Panel, PanelHead, Row, Tag } from "./primitives";
 
 export function DecisionPanel({ className }: { className?: string }) {
-  const { recommendation, options, previewOption, selectedConflict, decide, setPreviewOptionId } =
+  const { recommendation, options, previewOption, selectedConflict, decide, setPreviewOptionId, decisionStatus, globalPlan } =
     useTwin();
   const [modify, setModify] = useState(false);
   const [holdSec, setHoldSec] = useState(120);
@@ -22,7 +22,9 @@ export function DecisionPanel({ className }: { className?: string }) {
       <Panel className={className}>
         <PanelHead title="Recommendation" meta="AI recommends · human decides" tone="dim" />
         <p className="px-3 py-4 text-[12px] text-muted-foreground">
-          No active recommendation. The twin issues advice only when a conflict is predicted.
+          {!selectedConflict
+            ? "Select a predicted conflict to generate its What-if options."
+            : "No safe action is currently available for this conflict; review the residual network conflicts or the global plan."}
         </p>
       </Panel>
     );
@@ -39,6 +41,16 @@ export function DecisionPanel({ className }: { className?: string }) {
         right={<Tag tone={target.safety.passed ? "ok" : "critical"}>Option {target.letter}</Tag>}
       />
       <div className="min-h-0 overflow-y-auto px-3 py-2">
+        {globalPlan ? (
+          <div className="mb-2 border border-border px-2 py-1 text-[10px]">
+            Global plan: <span className="text-selected">{globalPlan.status}</span> · {globalPlan.clearedConflicts.length} cleared · {globalPlan.residualConflicts.length} residual
+          </div>
+        ) : null}
+        {decisionStatus && decisionStatus.status !== "READY" ? (
+          <p className={`mb-2 border px-2 py-1 text-[10.5px] ${decisionStatus.status === "STALE" || decisionStatus.status === "REJECTED" ? "border-critical/50 text-critical" : "border-ok/50 text-ok"}`}>
+            {decisionStatus.status}: {decisionStatus.reason ?? "live decision status"}
+          </p>
+        ) : null}
         <div className="label-xs">What</div>
         <p className="mt-0.5 text-[12.5px]">{target.title}</p>
 

@@ -79,6 +79,10 @@ class TrainRuntime:
     nominal_speed_kmh: float
     priority: int
     ttype: str
+    scheduled_departure_sec: int = 0
+    activation_at_sec: float = 0.0
+    source: str = ""
+    provenance: str = ""
     status: TrainStatus = TrainStatus.RUNNING
     next_stop_index: int = 0
     finished: bool = False

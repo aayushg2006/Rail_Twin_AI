@@ -11,6 +11,7 @@ import {
 import type {
   CausalLink,
   Conflict,
+  CustomScenario,
   DecisionOutcome,
   DecisionRecord,
   DelayBreakdown,
@@ -20,8 +21,11 @@ import type {
   Point,
   Prediction,
   Recommendation,
+  GlobalPlan,
   ResolutionAction,
   ScenarioId,
+  ClockMode,
+  ConnectionStatus,
 } from "@/domain/types";
 import { MockTwinSource, type TwinBundle, type TwinDataSource } from "@/data/source";
 import { WebSocketTwinSource } from "@/data/wsSource";
@@ -37,7 +41,7 @@ import {
 import { clockOf } from "./format";
 
 export type SimSpeed = 1 | 2 | 5 | 10 | 20;
-export type ConnectionState = "CONNECTED" | "SIMULATED" | "OFFLINE";
+export type ConnectionState = ConnectionStatus;
 
 /** Pick the authoritative source: the Python backend over WebSocket when
  *  reachable, else the in-browser deterministic mock (offline fallback). */
@@ -73,6 +77,7 @@ interface TwinContextValue {
   kpis: KPISet;
   options: OptionOutcome[];
   recommendation: Recommendation | null;
+  globalPlan: GlobalPlan | null;
   selectedConflict: Conflict | null;
   selectedTrainId: string | null;
   selection: Selection;
@@ -99,8 +104,12 @@ interface TwinContextValue {
   mlByConflict: Record<string, MLPrediction>;
   /** ML predictions keyed by train id (backend). */
   mlByTrain: Record<string, MLPrediction[]>;
+  suggestionRevision: number | null;
+  clockMode: ClockMode;
+  decisionStatus: { status: string; reason?: string } | null;
   setPlaying: (v: boolean) => void;
   setSpeed: (v: SimSpeed) => void;
+  setClockMode: (mode: ClockMode) => void;
   setHorizonOffset: (v: number) => void;
   selectTrain: (id: string | null) => void;
   selectConflict: (id: string | null) => void;
@@ -109,6 +118,7 @@ interface TwinContextValue {
   setPreviewOptionId: (id: string | null) => void;
   toggleLayer: (k: keyof LayerFlags) => void;
   loadScenario: (id: ScenarioId) => void;
+  loadCustomScenario: (scenario: CustomScenario) => void;
   stepForward: (sec: number) => void;
   jumpToNextEvent: () => void;
   decide: (
@@ -126,7 +136,7 @@ const TICK_MS = 250;
 export function TwinProvider({ children }: { children: ReactNode }) {
   const sourceRef = useRef<TwinDataSource | null>(null);
   if (!sourceRef.current)
-    sourceRef.current = createSource("BASE", Date.parse("2026-03-11T16:44:00+05:30"));
+    sourceRef.current = createSource("BASE", Date.now());
   const source = sourceRef.current;
 
   const [sim, setSim] = useState<SimState>(() => source.getState());
@@ -283,7 +293,7 @@ export function TwinProvider({ children }: { children: ReactNode }) {
       // Prefer the backend decision path (safety re-validation + audit log);
       // fall back to a direct action apply for the offline mock.
       if (source.decide) {
-        source.decide(conflict, action, outcome, note);
+        source.decide(conflict, action, outcome, note, bundle?.suggestionRevision);
       } else if (outcome !== "REJECTED") {
         source.applyAction(action);
       }
@@ -323,6 +333,22 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     [source],
   );
 
+  const setClockMode = useCallback((mode: ClockMode) => {
+    source.setClockMode?.(mode);
+  }, [source]);
+
+  const loadCustomScenario = useCallback(
+    (scenario: CustomScenario) => {
+      source.loadCustomScenario?.(scenario);
+      setSelectedConflictId(null);
+      setPreviewOptionId(null);
+      setHorizonOffset(0);
+      setBaselineKpis(null);
+      setPlaying(true);
+    },
+    [source],
+  );
+
   const toggleLayer = useCallback((k: keyof LayerFlags) => {
     setLayers((l) => ({ ...l, [k]: !l[k] }));
   }, []);
@@ -352,6 +378,7 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     kpis,
     options,
     recommendation,
+    globalPlan: bundle?.globalPlan ?? null,
     selectedConflict,
     selectedTrainId,
     selection,
@@ -370,8 +397,12 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     delayBuckets: bundle?.delayBuckets ?? {},
     mlByConflict: bundle?.mlByConflict ?? {},
     mlByTrain: bundle?.mlByTrain ?? {},
+    suggestionRevision: bundle?.suggestionRevision ?? null,
+    clockMode: bundle?.clockMode ?? sim.clockMode,
+    decisionStatus: bundle?.lastDecisionStatus ?? null,
     setPlaying,
     setSpeed,
+    setClockMode,
     setHorizonOffset,
     selectTrain,
     selectConflict,
@@ -380,6 +411,7 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     setPreviewOptionId,
     toggleLayer,
     loadScenario,
+    loadCustomScenario,
     stepForward,
     jumpToNextEvent,
     decide,

@@ -7,7 +7,7 @@
  * (no backend running), this transparently falls back to the in-browser
  * MockTwinSource so the console still works offline — the demo never dies.
  */
-import type { DecisionOutcome, Conflict, ResolutionAction, ScenarioId } from "@/domain/types";
+import type { ClockMode, CustomScenario, DecisionOutcome, Conflict, ResolutionAction, ScenarioId } from "@/domain/types";
 import type { SimState } from "@/twin/engine";
 import { MockTwinSource } from "./source";
 import type { TwinBundle, TwinDataSource } from "./source";
@@ -23,6 +23,7 @@ export class WebSocketTwinSource implements TwinDataSource {
   private bundle: TwinBundle | null = null;
   private listeners = new Set<(s: SimState) => void>();
   private connected = false;
+  private reconnecting = false;
   private everConnected = false;
   private usingFallback = false;
   private fallback: MockTwinSource;
@@ -48,6 +49,7 @@ export class WebSocketTwinSource implements TwinDataSource {
   }
 
   private connect() {
+    this.reconnecting = this.everConnected;
     try {
       this.ws = new WebSocket(this.url);
     } catch {
@@ -56,6 +58,7 @@ export class WebSocketTwinSource implements TwinDataSource {
     }
     this.ws.onopen = () => {
       this.connected = true;
+      this.reconnecting = false;
       this.everConnected = true;
       this.usingFallback = false;
       if (this.fallbackTimer) window.clearTimeout(this.fallbackTimer);
@@ -70,7 +73,7 @@ export class WebSocketTwinSource implements TwinDataSource {
       } catch {
         return;
       }
-      if (!msg.simState) return;
+      if (!isValidBundle(msg)) return;
       this.bundle = msg;
       this.state = msg.simState;
       this.emit();
@@ -78,6 +81,7 @@ export class WebSocketTwinSource implements TwinDataSource {
     this.ws.onclose = () => {
       this.connected = false;
       if (!this.everConnected) return; // fallback timer handles first-connect failure
+      this.reconnecting = true;
       // reconnect; keep last frame on screen meanwhile
       window.setTimeout(() => this.connect(), RECONNECT_MS);
     };
@@ -138,12 +142,12 @@ export class WebSocketTwinSource implements TwinDataSource {
     this.send({ cmd: "apply_action", action });
   }
 
-  decide(conflict: Conflict, action: ResolutionAction, outcome: DecisionOutcome, note: string) {
+  decide(conflict: Conflict, action: ResolutionAction, outcome: DecisionOutcome, note: string, expectedRevision?: number) {
     if (this.usingFallback) {
       if (outcome !== "REJECTED") this.fallback.applyAction(action);
       return;
     }
-    this.send({ cmd: "decide", conflictId: conflict.id, action, outcome, note });
+    this.send({ cmd: "decide", conflictId: conflict.id, action, outcome, note, expectedRevision });
   }
 
   loadScenario(scenario: ScenarioId) {
@@ -152,6 +156,14 @@ export class WebSocketTwinSource implements TwinDataSource {
       return;
     }
     this.send({ cmd: "load_scenario", scenario });
+  }
+
+  loadCustomScenario(scenario: CustomScenario) {
+    if (this.usingFallback) {
+      this.fallback.loadCustomScenario(scenario);
+      return;
+    }
+    this.send({ cmd: "load_custom_scenario", scenario });
   }
 
   setPlaying(v: boolean) {
@@ -166,7 +178,20 @@ export class WebSocketTwinSource implements TwinDataSource {
     this.send({ cmd: "set_speed", speed: v });
   }
 
-  connectionState() {
-    return this.connected ? "CONNECTED" : this.usingFallback ? "SIMULATED" : "OFFLINE";
+  setClockMode(mode: ClockMode) {
+    if (this.usingFallback) return;
+    this.send({ cmd: "set_clock_mode", mode });
   }
+
+  connectionState() {
+    return this.connected ? "CONNECTED" : this.usingFallback ? "SIMULATED" : this.reconnecting ? "RECONNECTING" : "OFFLINE";
+  }
+}
+
+function isValidBundle(value: unknown): value is TwinBundle & { type?: string } {
+  if (!value || typeof value !== "object") return false;
+  const frame = value as Partial<TwinBundle>;
+  return !!frame.simState && typeof frame.simState === "object"
+    && !!frame.prediction && Array.isArray(frame.prediction.conflicts)
+    && !!frame.kpis && typeof frame.kpis === "object";
 }

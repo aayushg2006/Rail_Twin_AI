@@ -19,6 +19,11 @@ export function KpiBar() {
         ? `base ${(baselineKpis.totalDelaySec / 60).toFixed(1)}′`
         : undefined,
     },
+    {
+      label: "Earliness",
+      value: `-${((kpis.earlinessSec ?? 0) / 60).toFixed(1)}′`,
+      tone: "ok",
+    },
     { label: "Avg delay", value: `${(kpis.averageDelaySec / 60).toFixed(1)}′` },
     {
       label: "Passenger delay",
@@ -45,6 +50,7 @@ export function KpiBar() {
       value: kpis.recoveryTimeSec ? mmss(kpis.recoveryTimeSec) : "NO DATA",
       tone: kpis.recoveryTimeSec ? "warning" : "dim",
     },
+    { label: "Missed", value: String(kpis.missedServices ?? 0), tone: (kpis.missedServices ?? 0) ? "warning" : "ok" },
   ];
 
   return (

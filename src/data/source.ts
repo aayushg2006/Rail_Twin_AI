@@ -8,6 +8,7 @@
  */
 import type {
   CausalLink,
+  CustomScenario,
   Conflict,
   DecisionOutcome,
   DelayBreakdown,
@@ -18,6 +19,9 @@ import type {
   Recommendation,
   ResolutionAction,
   ScenarioId,
+  ClockMode,
+  ConnectionStatus,
+  GlobalPlan,
 } from "@/domain/types";
 import { advanceTo, applyAction, createSimState, tick, type SimState } from "@/twin/engine";
 
@@ -28,7 +32,8 @@ import { advanceTo, applyAction, createSimState, tick, type SimState } from "@/t
  * the same values locally as an offline fallback.
  */
 export interface TwinBundle {
-  connection: "CONNECTED" | "SIMULATED" | "OFFLINE";
+  connection: ConnectionStatus;
+  connectionStatus?: ConnectionStatus;
   simState: SimState;
   prediction: Prediction;
   kpis: KPISet;
@@ -37,12 +42,24 @@ export interface TwinBundle {
   optionsByConflict?: Record<string, OptionOutcome[]>;
   recommendation?: Recommendation | null;
   recommendationByConflict?: Record<string, Recommendation | null>;
+  globalPlan?: GlobalPlan | null;
+  globalPlanStatus?: string;
   causalChain?: CausalLink[];
   delayBuckets?: Record<string, DelayBreakdown>;
   mlByTrain?: Record<string, MLPrediction[]>;
   mlByConflict?: Record<string, MLPrediction>;
   playing?: boolean;
   speed?: number;
+  dataPackId?: string;
+  dataProvenance?: string;
+  snapshotDate?: string;
+  suggestionRevision?: number;
+  suggestionGeneratedAt?: number;
+  wallClockMs?: number;
+  clockMode?: ClockMode;
+  serviceDate?: string;
+  persistenceStatus?: string;
+  lastDecisionStatus?: { status: string; reason?: string };
 }
 
 export interface TwinDataSource {
@@ -55,15 +72,23 @@ export interface TwinDataSource {
   seek(simTimeSec: number): void;
   applyAction(action: ResolutionAction): void;
   loadScenario(scenario: ScenarioId): void;
-  connectionState(): "CONNECTED" | "SIMULATED" | "OFFLINE";
+  loadCustomScenario?(scenario: CustomScenario): void;
+  connectionState(): ConnectionStatus;
   /** Backend-computed frame, or null when the source derives locally. */
   getBundle?(): TwinBundle | null;
   /** Play/pause the authoritative clock (no-op for the local mock). */
   setPlaying?(v: boolean): void;
   /** Set the authoritative clock speed (no-op for the local mock). */
   setSpeed?(v: number): void;
+  setClockMode?(mode: ClockMode): void;
   /** Record a controller decision on the backend (accept/modify/reject). */
-  decide?(conflict: Conflict, action: ResolutionAction, outcome: DecisionOutcome, note: string): void;
+  decide?(
+    conflict: Conflict,
+    action: ResolutionAction,
+    outcome: DecisionOutcome,
+    note: string,
+    expectedRevision?: number,
+  ): void;
 }
 
 export class MockTwinSource implements TwinDataSource {
@@ -109,6 +134,31 @@ export class MockTwinSource implements TwinDataSource {
 
   loadScenario(scenario: ScenarioId) {
     this.state = createSimState(scenario, this.state.epochStartMs);
+    this.emit();
+  }
+
+  loadCustomScenario(scenario: CustomScenario) {
+    this.state = createSimState("BASE", this.state.epochStartMs);
+    this.state.scenario = scenario.id;
+    for (const event of scenario.events) {
+      if (event.kind === "BLOCK" || event.kind === "PLATFORM") {
+        this.state.blockedResources = [...new Set([...this.state.blockedResources, event.targetId])];
+      } else if (event.kind === "HEADWAY") {
+        this.state.headwayMultiplier = Math.max(0.5, Math.min(4, event.value ?? 1));
+      } else if (event.kind === "SPEED_RESTRICTION" || event.kind === "BREAKDOWN") {
+        this.state = applyAction(this.state, {
+          kind: "SPEED_REGULATION",
+          trainId: event.targetId,
+          speedKmh: event.value ?? 20,
+        });
+      } else if (event.kind === "TRAIN_DELAY" || event.kind === "HOLD") {
+        this.state = applyAction(this.state, {
+          kind: "HOLD",
+          trainId: event.targetId,
+          holdSec: event.value ?? 0,
+        });
+      }
+    }
     this.emit();
   }
 

@@ -82,8 +82,16 @@ def evaluate(base: AnalyticState, base_delays: dict[str, float], cand: Candidate
 
     after = apply_action(base, cand.action)
     pred = predict(after, horizon)
-    still = any(c.resource_id == conflict.resource_id and c.severity == "CRITICAL"
-                for c in pred.conflicts)
+    # Resolve the selected causal conflict locally. Independent conflicts remain
+    # visible as residual network work and do not make this action unsafe.
+    def same_causal_conflict(other: Conflict) -> bool:
+        if other.resource_id != conflict.resource_id:
+            return False
+        if not conflict.train_b:
+            return other.train_a in {conflict.train_a, cand.action.train_id}
+        return {other.train_a, other.train_b} == {conflict.train_a, conflict.train_b}
+
+    still = any(c.severity == "CRITICAL" and same_causal_conflict(c) for c in pred.conflicts)
     resolved = not still
     after_delays = delay_profile(after)
     added: dict[str, float] = {}

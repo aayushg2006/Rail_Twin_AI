@@ -33,6 +33,14 @@ class AuditStore:
                         safety_result JSONB, controller_action TEXT,
                         modified_parameters JSONB, final_action JSONB, resulting_metrics JSONB
                     )""")
+                await con.execute(
+                    """CREATE TABLE IF NOT EXISTS active_scenario (
+                        id INTEGER PRIMARY KEY CHECK (id = 1),
+                        payload JSONB NOT NULL,
+                        clock_mode TEXT NOT NULL DEFAULT 'LIVE',
+                        data_pack_id TEXT,
+                        updated_at DOUBLE PRECISION NOT NULL
+                    )""")
         except Exception:
             self._pool = None  # graceful: stay in-memory
 
@@ -76,6 +84,36 @@ class AuditStore:
 
     def all(self) -> list[dict]:
         return list(reversed(self.records))
+
+    def save_scenario_sync(self, payload: dict, clock_mode: str, data_pack_id: str) -> None:
+        if self._pool is None:
+            return
+        with __import__("contextlib").suppress(RuntimeError):
+            asyncio.get_running_loop().create_task(self._write_scenario(payload, clock_mode, data_pack_id))
+
+    async def _write_scenario(self, payload: dict, clock_mode: str, data_pack_id: str) -> None:
+        import json
+        try:
+            async with self._pool.acquire() as con:
+                await con.execute(
+                    """INSERT INTO active_scenario (id, payload, clock_mode, data_pack_id, updated_at)
+                       VALUES (1, $1, $2, $3, $4)
+                       ON CONFLICT (id) DO UPDATE SET payload=$1, clock_mode=$2, data_pack_id=$3, updated_at=$4""",
+                    json.dumps(payload), clock_mode, data_pack_id, time.time())
+        except Exception:
+            pass
+
+    async def load_scenario(self) -> dict | None:
+        if self._pool is None:
+            return None
+        try:
+            async with self._pool.acquire() as con:
+                row = await con.fetchrow("SELECT payload, clock_mode, data_pack_id FROM active_scenario WHERE id=1")
+                if not row:
+                    return None
+                return {"payload": row["payload"], "clockMode": row["clock_mode"], "dataPackId": row["data_pack_id"]}
+        except Exception:
+            return None
 
     async def close(self) -> None:
         if self._pool is not None:

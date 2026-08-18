@@ -18,6 +18,7 @@ import type {
   SafetyValidation,
   ScenarioId,
   TrainState,
+  ClockMode,
 } from "@/domain/types";
 import { crossingDistance, kmhToUnitsPerSec, pathLength, pathSlice, pointAt } from "./geometry";
 import { resourceById, routeById, routeResourceUse } from "./topology";
@@ -41,6 +42,9 @@ export interface SimState {
   appliedActions: ResolutionAction[];
   /** trainId -> sim time it may re-enter the section. */
   respawnAt: Record<string, number>;
+  clockMode: ClockMode;
+  wallClockMs: number;
+  serviceDate: string;
 }
 
 export function createSimState(scenario: ScenarioId, epochStartMs: number): SimState {
@@ -49,7 +53,7 @@ export function createSimState(scenario: ScenarioId, epochStartMs: number): SimS
     simTimeSec: 0,
     epochStartMs,
     lastUpdateSec: 0,
-    trains: initialTrainStates(scenario),
+    trains: initialTrainStates(scenario, epochStartMs),
     scenario,
     routeOverrides: {},
     blockedResources: setup.blockedResources,
@@ -57,6 +61,9 @@ export function createSimState(scenario: ScenarioId, epochStartMs: number): SimS
     unavailableRoutes: setup.unavailableRoutes,
     appliedActions: [],
     respawnAt: {},
+    clockMode: "LIVE",
+    wallClockMs: epochStartMs,
+    serviceDate: new Date(epochStartMs).toISOString().slice(0, 10),
   };
 }
 
@@ -97,7 +104,8 @@ export function projectArrival(state: SimState, trainId: string, sTarget: number
   const route = routeFor(state, trainId);
   if (sTarget < st.s - 1) return null;
   const v = kmhToUnitsPerSec(Math.max(1, st.speedKmh));
-  let t = st.holdRemainingSec + st.dwellRemainingSec;
+  let t = Math.max(0, (st.activationAtSec ?? 0) - state.simTimeSec)
+    + st.holdRemainingSec + st.dwellRemainingSec;
   let d = st.s;
   for (let i = st.nextStopIndex; i < route.stops.length; i++) {
     const stop = route.stops[i]!;
@@ -120,7 +128,14 @@ export function projectFinish(state: SimState, trainId: string): number | null {
 export function tick(prev: SimState, dt: number): SimState {
   const state = cloneState(prev);
   state.simTimeSec += dt;
+  state.wallClockMs += dt * 1000;
   state.lastUpdateSec = state.simTimeSec;
+
+  const syncVariance = (st: TrainState) => {
+    st.latenessSec = Math.max(0, st.delaySec);
+    st.earlinessSec = 0;
+    st.signedVarianceSec = st.latenessSec;
+  };
 
   for (const f of fleet) {
     const st = state.trains[f.id]!;
@@ -128,24 +143,26 @@ export function tick(prev: SimState, dt: number): SimState {
     const len = routeLength(route);
 
     if (st.finished) {
-      const due = state.respawnAt[f.id];
-      if (due !== undefined && state.simTimeSec >= due) {
-        const fresh = initialTrainStates(state.scenario)[f.id]!;
-        state.trains[f.id] = { ...fresh, s: 0, delaySec: fresh.delaySec };
-        delete state.respawnAt[f.id];
-      }
+      syncVariance(state.trains[f.id]!);
       continue;
+    }
+
+    if (st.state === "SCHEDULED") {
+      if (state.simTimeSec < (st.activationAtSec ?? 0)) continue;
+      st.state = "RUNNING";
     }
 
     if (st.holdRemainingSec > 0) {
       st.holdRemainingSec = Math.max(0, st.holdRemainingSec - dt);
       st.delaySec += dt;
       st.state = "HELD";
+      syncVariance(st);
       continue;
     }
     if (st.dwellRemainingSec > 0) {
       st.dwellRemainingSec = Math.max(0, st.dwellRemainingSec - dt);
       st.state = "DWELL";
+      syncVariance(st);
       continue;
     }
 
@@ -167,7 +184,6 @@ export function tick(prev: SimState, dt: number): SimState {
         }
         st.finished = true;
         st.state = "CLEARED";
-        state.respawnAt[f.id] = state.simTimeSec + RESPAWN_GAP_SEC;
         break;
       }
     }
@@ -180,6 +196,7 @@ export function tick(prev: SimState, dt: number): SimState {
       const dToStation = Math.abs(st.s - (route.stops[st.nextStopIndex]?.s ?? -1e9));
       if (dToStation < 120) st.state = "APPROACHING";
     }
+    syncVariance(st);
   }
   return state;
 }
@@ -437,9 +454,13 @@ function outcomeFor(
   }
   const after = applyAction(baseState, action);
   const prediction = predict(after, horizonSec);
-  const stillThere = prediction.conflicts.find(
-    (c) => c.resourceId === conflict.resourceId && c.severity === "CRITICAL",
-  );
+  const stillThere = prediction.conflicts.find((c) => {
+    if (c.severity !== "CRITICAL" || c.resourceId !== conflict.resourceId) return false;
+    if (!conflict.trainB) return c.trainA === conflict.trainA || c.trainA === action.trainId;
+    return new Set([c.trainA, c.trainB]).size === 2
+      && new Set([c.trainA, c.trainB]).has(conflict.trainA)
+      && new Set([c.trainA, c.trainB]).has(conflict.trainB);
+  });
   const resolved = !stillThere;
   const afterDelays = delayProfile(after);
   const addedDelaySec: Record<string, number> = {};
@@ -678,7 +699,11 @@ export function recommend(
   // Passenger delay is weighted three times freight delay: passenger impact
   // dominates network cost at a suburban junction.
   const score = (o: OptionOutcome) =>
-    o.passengerDelaySec * 3 + o.freightDelaySec + (o.infrastructureChange === "NONE" ? 0 : 60);
+    -o.throughputDelta * 1_000_000 +
+    Math.max(0, o.networkDelaySec) +
+    Math.max(0, o.passengerDelaySec) * 3 +
+    Math.max(0, o.freightDelaySec) +
+    (o.infrastructureChange === "NONE" ? 0 : 60);
   const best = [...viable].sort((x, y) => score(x) - score(y))[0]!;
   const others = viable.filter((o) => o.id !== best.id);
   const keepTrain = conflict.trainA === best.action.trainId ? conflict.trainB : conflict.trainA;
@@ -699,7 +724,10 @@ export function recommend(
 }
 
 export function computeKPIs(state: SimState, prediction: Prediction): KPISet {
-  const active = fleet.filter((f) => !state.trains[f.id]?.finished);
+  const active = fleet.filter((f) => {
+    const st = state.trains[f.id];
+    return !!st && !st.finished && st.state !== "SCHEDULED";
+  });
   const totalDelay = active.reduce((sum, f) => sum + (state.trains[f.id]?.delaySec ?? 0), 0);
   const passengerDelay = active
     .filter((f) => f.type !== "FREIGHT" && f.type !== "SHUNT")
@@ -707,6 +735,8 @@ export function computeKPIs(state: SimState, prediction: Prediction): KPISet {
   const freightDelay = active
     .filter((f) => f.type === "FREIGHT")
     .reduce((sum, f) => sum + (state.trains[f.id]?.delaySec ?? 0), 0);
+  const lateness = active.reduce((sum, f) => sum + (state.trains[f.id]?.latenessSec ?? state.trains[f.id]?.delaySec ?? 0), 0);
+  const earliness = active.reduce((sum, f) => sum + (state.trains[f.id]?.earlinessSec ?? 0), 0);
   const onTime = active.filter((f) => (state.trains[f.id]?.delaySec ?? 0) <= 180).length;
   const occupied = occupiedPlatforms(state);
   const clearedWithinHour = active.filter((f) => {
@@ -725,6 +755,10 @@ export function computeKPIs(state: SimState, prediction: Prediction): KPISet {
     platformUtilisation: Object.keys(occupied).length / 7,
     onTimePercent: active.length ? (onTime / active.length) * 100 : 0,
     recoveryTimeSec: recoveryTime(state, prediction),
+    latenessSec: lateness,
+    earlinessSec: earliness,
+    signedVarianceSec: lateness - earliness,
+    missedServices: Math.max(0, active.length - clearedWithinHour),
   };
 }
 

@@ -6,9 +6,11 @@ client -> server : {cmd:"pause"|"resume"|"set_speed"|"seek"|"apply_action"|
 """
 from __future__ import annotations
 
+import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 router = APIRouter()
+logger = logging.getLogger("railtwin.ws")
 
 
 @router.websocket("/ws")
@@ -23,7 +25,9 @@ async def ws_endpoint(ws: WebSocket) -> None:
             await orch.handle_command(msg)
     except WebSocketDisconnect:
         pass
-    except Exception:
-        pass
+    except Exception as exc:
+        logger.exception("WebSocket session failed")
+        with __import__("contextlib").suppress(Exception):
+            await ws.send_json({"type": "error", "connectionStatus": "RECONNECTING", "message": str(exc)})
     finally:
         orch.remove_client(ws)

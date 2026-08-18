@@ -12,6 +12,8 @@ prediction / what-if layer (predict.py) that drives the conflict & options UI.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import simpy
 
@@ -58,9 +60,15 @@ def route_length(route_id: str) -> float:
 
 
 class SimulationEngine:
-    def __init__(self, scenario_id: str = "BASE", seed: int | None = None):
+    def __init__(self, scenario_id: str = "BASE", seed: int | None = None,
+                 epoch_start_ms: int | None = None):
         self.scenario_id = scenario_id
         self.seed = settings.seed if seed is None else seed
+        # Direct engine consumers/tests use the deterministic snapshot clock.
+        # The live orchestrator passes its wall-clock epoch explicitly.
+        self.epoch_start_ms = epoch_start_ms or settings.demo_epoch_start_ms
+        instant = datetime.fromtimestamp(self.epoch_start_ms / 1000, tz=ZoneInfo("Asia/Kolkata"))
+        self.service_seconds = instant.hour * 3600 + instant.minute * 60 + instant.second
         self.setup: ScenarioSetup = scenario_setup(scenario_id)
         self.env = simpy.Environment()
         self.trains: dict[str, TrainRuntime] = {}
@@ -89,12 +97,22 @@ class SimulationEngine:
                 v = kmh_to_units_per_sec(f.nominal_speed_kmh)
                 shift_units = ov.start_shift * v
             s = max(0.0, base_s - shift_units)  # positive shift => started later => further back
+            departure = int(f.scheduled_departure_sec)
+            elapsed_from_departure = self.service_seconds - departure
+            nominal_duration = path_length(route.path) / max(EPS, kmh_to_units_per_sec(f.nominal_speed_kmh))
+            nominal_duration += sum(stop.dwell_sec for stop in route.stops)
+            completed_at_start = elapsed_from_departure > nominal_duration + 300
+            activation_at = max(0.0, departure - self.service_seconds)
             speed = ov.speed_kmh if (ov and ov.speed_kmh is not None) else f.nominal_speed_kmh
             nominal = ov.nominal_speed_kmh if (ov and ov.nominal_speed_kmh is not None) else f.nominal_speed_kmh
             rt = TrainRuntime(
                 train_id=f.id, route_id=f.route_id, s=s, speed_kmh=speed,
                 nominal_speed_kmh=nominal, priority=f.priority, ttype=f.type,
-                status=TrainStatus.RUNNING,
+                scheduled_departure_sec=f.scheduled_departure_sec,
+                source=f.source, provenance=f.provenance,
+                activation_at_sec=activation_at,
+                status=TrainStatus.COMPLETED if completed_at_start else TrainStatus.SCHEDULED if activation_at > 0 else TrainStatus.RUNNING,
+                finished=completed_at_start,
             )
             rt.delays.base_schedule = f.entry_delay_min * 60.0
             rt.next_stop_index = self._first_stop_index(f.route_id, s)
@@ -135,6 +153,12 @@ class SimulationEngine:
         rt = self.trains[tid]
         while not rt.finished:
             try:
+                if env.now < rt.activation_at_sec:
+                    rt.status = TrainStatus.SCHEDULED
+                    rt.moving = False
+                    yield env.timeout(rt.activation_at_sec - env.now)
+                    rt.status = TrainStatus.RUNNING
+                    continue
                 # consume any controller-imposed hold first
                 if rt.pending_hold_sec > 0:
                     hold = rt.pending_hold_sec
@@ -336,6 +360,18 @@ class SimulationEngine:
                 self._interrupt(action.train_id)
         self.applied_actions.append(action)
 
+    def set_headway_multiplier(self, multiplier: float) -> None:
+        """Apply a validated operational headway change to live resources."""
+        value = max(0.5, min(4.0, float(multiplier)))
+        self.headway_multiplier = value
+        for resource in self.resources.values():
+            resource.headway_multiplier = value
+
+    def clear_resource(self, resource_id: str) -> None:
+        if resource_id in self.resources:
+            self.blocked_resources.discard(resource_id)
+            self.resources[resource_id].blocked = False
+
     def _interrupt(self, tid: str) -> None:
         proc = self.procs.get(tid)
         if proc is not None and proc.is_alive:
@@ -379,6 +415,9 @@ class SimulationEngine:
                 delay_sec=rt.delays.total, next_stop_index=rt.next_stop_index,
                 dwell_remaining=rt.dwell_remaining(now), hold_remaining=rt.hold_remaining(now),
                 finished=rt.finished, priority=rt.priority, ttype=rt.ttype,
+                scheduled_departure_sec=rt.scheduled_departure_sec,
+                activation_at_sec=rt.activation_at_sec,
+                source=rt.source, provenance=rt.provenance,
             )
         return AnalyticState(
             sim_time=now, trains=trains,

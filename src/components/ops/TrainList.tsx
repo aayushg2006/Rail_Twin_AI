@@ -52,7 +52,9 @@ export function TrainList({ className }: { className?: string }) {
               >
                 <td className="num px-2 py-1 text-[11.5px]">
                   <span className={conflicted ? "text-critical" : ""}>{train.number}</span>
-                  <span className="ml-2 text-[10px] text-faint">{train.name}</span>
+                  <span className="ml-2 text-[10px] text-faint">
+                    {train.name} · {train.provenance === "synthetic-demo" ? "synthetic" : "snapshot"}
+                  </span>
                 </td>
                 <td className="px-2 py-1">
                   <Tag tone={train.type === "FREIGHT" ? "freight" : "neutral"}>

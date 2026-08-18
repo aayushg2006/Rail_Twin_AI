@@ -13,12 +13,14 @@ const NAV = [
 ] as const;
 
 export function TopBar() {
-  const { sim, prediction, scenario, loadScenario, horizonOffset, connection } = useTwin();
+  const { sim, prediction, scenario, loadScenario, horizonOffset, connection, clockMode, setClockMode } = useTwin();
   const clock = clockOf(sim.epochStartMs + sim.simTimeSec * 1000);
   const critical = prediction.conflicts.filter((c) => c.severity === "CRITICAL").length;
   const link =
     connection === "CONNECTED"
       ? { dot: "bg-ok", text: "Backend twin · live" }
+      : connection === "RECONNECTING"
+        ? { dot: "bg-warning", text: "Reconnecting to twin..." }
       : connection === "SIMULATED"
         ? { dot: "bg-warning", text: "In-browser sim · offline" }
         : { dot: "bg-faint", text: "Connecting to twin…" };
@@ -34,6 +36,15 @@ export function TopBar() {
         <span className="num text-[17px] leading-none">{clock}</span>
         <span className="label-xs">IST</span>
         <span className="num text-[10px] text-faint">SIM T+{mmss(sim.simTimeSec)}</span>
+        <select
+          value={clockMode}
+          onChange={(e) => setClockMode(e.target.value as "LIVE" | "DEMO")}
+          className="font-cond border border-border bg-panel px-1 py-[2px] text-[9px] uppercase"
+          aria-label="Clock mode"
+        >
+          <option value="LIVE">Live clock</option>
+          <option value="DEMO">Demo snapshot</option>
+        </select>
       </div>
 
       <Tag tone={horizonOffset > 0 ? "selected" : "neutral"}>

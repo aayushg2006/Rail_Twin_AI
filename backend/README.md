@@ -19,6 +19,11 @@ Railway state  →  data ingestion / normalization  →  Vasai Road digital twin
 
 ## Run
 
+The shared schedule pack is `data/vasai-data.json`. It uses the supplied 15 Aug
+2026 BSR snapshot, supplemental local-service records, and explicitly labelled
+synthetic freight movements. The backend exposes provenance at `GET /api/data-pack`;
+freight is not represented as an official FOIS timetable.
+
 ### Local (no Docker)
 ```bash
 cd backend

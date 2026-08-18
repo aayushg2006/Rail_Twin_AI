@@ -100,6 +100,7 @@ export interface RailRoute {
 export type TrainType = "EXPRESS" | "PASSENGER" | "LOCAL" | "MEMU" | "FREIGHT" | "SHUNT";
 
 export type TrainOperationalState =
+  | "SCHEDULED"
   | "RUNNING"
   | "APPROACHING"
   | "DWELL"
@@ -119,6 +120,69 @@ export interface Train {
   destination: string;
   /** Scheduled delay carried on entry, minutes. */
   entryDelayMin: number;
+  /** Timetable provenance and schedule metadata. */
+  scheduledDepartureSec?: number;
+  source?: string;
+  provenance?: "passenger-snapshot" | "synthetic-demo" | "fois-import";
+}
+
+export interface ScheduleService extends Train {
+  operatingDays: string;
+  snapshotDate: string;
+}
+
+export interface FreightTemplate {
+  id: string;
+  label: string;
+  routeId: string;
+  origin: string;
+  destination: string;
+  departureWindow: [number, number];
+  nominalSpeedKmh: number;
+  provenance: "synthetic-demo";
+}
+
+export interface ScenarioEvent {
+  id: string;
+  kind: "TRAIN_DELAY" | "SPEED_RESTRICTION" | "HOLD" | "BREAKDOWN" | "BLOCK" | "PLATFORM" | "HEADWAY";
+  targetId: string;
+  value?: number;
+  atSec?: number;
+  durationSec?: number;
+  severity?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  reason?: string;
+}
+
+export interface CustomScenario {
+  id: string;
+  label: string;
+  description: string;
+  events: ScenarioEvent[];
+}
+
+export interface DataPack {
+  id: string;
+  label: string;
+  snapshotDate: string;
+  defaultReferenceDay: string;
+  sources: { label: string; url?: string; snapshotDate: string; provenance: string }[];
+  services: ScheduleService[];
+  freightTemplates: FreightTemplate[];
+  scenarios: ScenarioDefinition[];
+}
+
+export type ClockMode = "LIVE" | "DEMO";
+export type ConnectionStatus = "CONNECTED" | "RECONNECTING" | "SIMULATED" | "OFFLINE";
+
+export interface GlobalPlan {
+  id: string;
+  status: "COMPLETE" | "PARTIAL" | "NO_SAFE_PLAN";
+  actions: ResolutionAction[];
+  clearedConflicts: string[];
+  residualConflicts: string[];
+  networkDelaySec: number;
+  throughputDelta: number;
+  rationale: string;
 }
 
 /** Mutable live state of one train. */
@@ -139,6 +203,11 @@ export interface TrainState {
   holdRemainingSec: number;
   /** Accumulated delay, seconds. */
   delaySec: number;
+  scheduledDepartureSec?: number;
+  activationAtSec?: number;
+  latenessSec?: number;
+  earlinessSec?: number;
+  signedVarianceSec?: number;
   /** Set once the train has run off the end of its route. */
   finished: boolean;
 }
@@ -245,6 +314,10 @@ export interface KPISet {
   platformUtilisation: number;
   onTimePercent: number;
   recoveryTimeSec: number | null;
+  latenessSec?: number;
+  earlinessSec?: number;
+  signedVarianceSec?: number;
+  missedServices?: number;
 }
 
 export type DecisionOutcome = "ACCEPTED" | "REJECTED" | "MODIFIED";
@@ -273,7 +346,8 @@ export type ScenarioId =
   | "TRAIN_BREAKDOWN"
   | "YARD_CONGESTION"
   | "PEAK_TRAFFIC"
-  | "MULTIPLE_DELAYS";
+  | "MULTIPLE_DELAYS"
+  | (string & {});
 
 export interface ScenarioDefinition {
   id: ScenarioId;

@@ -21,8 +21,16 @@ def option_cost(ev: OptionEval, w: ObjectiveWeights | None = None) -> float:
     w = w or settings.weights
     hold_sec = ev.action.hold_sec or 0.0
     route_change = 1 if ev.infrastructure_change != "NONE" else 0
-    passenger_component = ev.passenger_delay_sec * w.passenger_vs_freight + ev.freight_delay_sec
-    return (w.delay * passenger_component
-            + w.conflict * ev.residual_conflicts
-            + w.route * route_change
-            + w.hold * hold_sec)
+    # Lexicographic surrogate: safety/residual conflicts are hard constraints in
+    # the solver, then throughput, then positive lateness. A faster what-if must
+    # never receive a fake benefit merely because a signed value became negative.
+    passenger_component = max(0.0, ev.passenger_delay_sec) * w.passenger_vs_freight
+    freight_component = max(0.0, ev.freight_delay_sec)
+    positive_network = max(0.0, ev.network_delay_sec)
+    return (
+        w.conflict * 1_000_000 * ev.residual_conflicts
+        - 1_000_000 * ev.throughput_delta
+        + w.delay * (positive_network + passenger_component + freight_component)
+        + w.route * route_change
+        + w.hold * hold_sec
+    )
