@@ -1,0 +1,165 @@
+@import "tailwindcss" source(none);
+@source "../src";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Vasai Road Digital Twin — operational design system.
+ *
+ * Near-neutral dark foundation with tonal separation between the application
+ * shell, the map surface, panels and elevated controls. Colour is semantic
+ * only: neutral = normal, amber = approaching a constraint, red = active
+ * critical conflict, green = validated, blue = selected / analytical.
+ */
+
+@theme inline {
+  --radius-sm: 1px;
+  --radius-md: 2px;
+  --radius-lg: 3px;
+  --radius-xl: 4px;
+
+  --font-sans: "IBM Plex Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "IBM Plex Mono", "SFMono-Regular", Consolas, monospace;
+  --font-cond: "IBM Plex Sans Condensed", "IBM Plex Sans", sans-serif;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-shell: var(--shell);
+  --color-panel: var(--panel);
+  --color-panel-raised: var(--panel-raised);
+  --color-map: var(--map);
+  --color-map-deep: var(--map-deep);
+  --color-card: var(--panel);
+  --color-card-foreground: var(--foreground);
+  --color-popover: var(--panel-raised);
+  --color-popover-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--panel-raised);
+  --color-secondary-foreground: var(--foreground);
+  --color-muted: var(--panel-raised);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--panel-raised);
+  --color-accent-foreground: var(--foreground);
+  --color-destructive: var(--critical);
+  --color-destructive-foreground: var(--foreground);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--border);
+  --color-ring: var(--selected);
+
+  --color-critical: var(--critical);
+  --color-warning: var(--warning);
+  --color-ok: var(--ok);
+  --color-normal: var(--normal);
+  --color-faint: var(--faint);
+  --color-selected: var(--selected);
+  --color-rail: var(--rail);
+  --color-rail-strong: var(--rail-strong);
+  --color-platform: var(--platform);
+  --color-freight: var(--freight);
+  --color-predicted: var(--predicted);
+}
+
+:root {
+  --background: oklch(0.196 0.008 250);
+  --shell: oklch(0.196 0.008 250);
+  --panel: oklch(0.216 0.008 250);
+  --panel-raised: oklch(0.256 0.009 250);
+  --map: oklch(0.168 0.008 250);
+  --map-deep: oklch(0.143 0.008 250);
+  --foreground: oklch(0.938 0.004 250);
+  --muted-foreground: oklch(0.742 0.008 250);
+  --faint: oklch(0.578 0.009 250);
+  --border: oklch(0.318 0.009 250);
+  --border-strong: oklch(0.412 0.011 250);
+
+  --primary: oklch(0.708 0.098 232);
+  --primary-foreground: oklch(0.168 0.008 250);
+  --selected: oklch(0.708 0.098 232);
+  --critical: oklch(0.607 0.164 24);
+  --warning: oklch(0.771 0.135 74);
+  --ok: oklch(0.716 0.115 158);
+  --normal: oklch(0.756 0.032 200);
+  --rail: oklch(0.442 0.011 250);
+  --rail-strong: oklch(0.512 0.011 250);
+  --platform: oklch(0.298 0.008 250);
+  --freight: oklch(0.723 0.055 96);
+  --predicted: oklch(0.66 0.06 232);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--selected) 40%, transparent);
+  }
+}
+
+@utility label-xs {
+  font-family: var(--font-cond);
+  font-size: 10px;
+  line-height: 1.1;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+@keyframes pulse-conflict {
+  0%,
+  100% {
+    opacity: 0.34;
+  }
+  50% {
+    opacity: 0.66;
+  }
+}
+
+@utility conflict-pulse {
+  animation: pulse-conflict 2.4s ease-in-out infinite;
+}
+
+@utility hairline-b {
+  border-bottom: 1px solid var(--border);
+}
+
+@utility num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+@utility panel-surface {
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
+
+@utility hairline-t {
+  border-top: 1px solid var(--border);
+}
+
+::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+::-webkit-scrollbar-track {
+  background: var(--map-deep);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+}
