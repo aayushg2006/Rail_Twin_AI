@@ -1,0 +1,66 @@
+{
+  "current_delay_seconds": [
+    0.0,
+    1200.0
+  ],
+  "distance_remaining_m": [
+    0.0,
+    15529.166666666668
+  ],
+  "current_speed_kmh": [
+    15.0,
+    95.0
+  ],
+  "scheduled_remaining_seconds": [
+    0.0,
+    1745.973735621702
+  ],
+  "train_type": [
+    0.0,
+    5.0
+  ],
+  "priority_class": [
+    1.0,
+    6.0
+  ],
+  "dwell_remaining_seconds": [
+    0.0,
+    89.9407671175008
+  ],
+  "number_of_stops_remaining": [
+    0.0,
+    1.0
+  ],
+  "next_resource_dist_m": [
+    0.40273876461469627,
+    1000000.0
+  ],
+  "junction_congestion": [
+    0.0,
+    1.0
+  ],
+  "downstream_train_count": [
+    0.0,
+    0.0
+  ],
+  "average_recent_delay": [
+    128.57142857142858,
+    333.6186375054065
+  ],
+  "headway_seconds": [
+    600.0,
+    600.0
+  ],
+  "route_congestion": [
+    0.0,
+    4.0
+  ],
+  "blocked_ahead": [
+    0.0,
+    1.0
+  ],
+  "time_of_day": [
+    11.237499999988358,
+    11.487317914376035
+  ]
+}

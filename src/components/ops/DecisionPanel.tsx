@@ -12,8 +12,10 @@ export function DecisionPanel({ className }: { className?: string }) {
   const [speedKmh, setSpeedKmh] = useState(40);
   const [note, setNote] = useState("");
 
+  const { mlByConflict } = useTwin();
   const rec = recommendation ? options.find((o) => o.id === recommendation.optionId) : null;
   const target = previewOption ?? rec;
+  const ml = selectedConflict ? mlByConflict[selectedConflict.id] : undefined;
 
   if (!selectedConflict || !recommendation || !target) {
     return (
@@ -42,6 +44,39 @@ export function DecisionPanel({ className }: { className?: string }) {
 
         <div className="label-xs mt-2">Why</div>
         <p className="mt-0.5 text-[12px] text-muted-foreground">{recommendation.rationale}</p>
+
+        {ml ? (
+          <>
+            <div className="label-xs mt-2">ML conflict assessment</div>
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+              <Tag tone={ml.value >= 0.5 ? "critical" : ml.value >= 0.25 ? "warning" : "ok"}>
+                {(ml.value * 100).toFixed(0)}% conflict prob
+              </Tag>
+              <Tag tone={ml.status === "OK" ? "ok" : "dim"}>
+                conf {(ml.confidence * 100).toFixed(0)}%
+              </Tag>
+              <span className="num text-[9.5px] text-faint">{ml.modelVersion}</span>
+            </div>
+            {ml.contributions.length ? (
+              <ul className="mt-1 space-y-0.5">
+                {ml.contributions.slice(0, 4).map((c) => (
+                  <li key={c.feature} className="num text-[10.5px] text-muted-foreground">
+                    <span className={c.contribution >= 0 ? "text-critical" : "text-ok"}>
+                      {c.contribution >= 0 ? "▲" : "▼"}
+                    </span>{" "}
+                    {c.feature.replace(/_/g, " ")}
+                    <span className="text-faint"> ({c.value})</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {ml.status !== "OK" ? (
+              <p className="mt-1 text-[10px] text-faint">
+                Low confidence — deterministic projection used; safety validation stays authoritative.
+              </p>
+            ) : null}
+          </>
+        ) : null}
 
         <div className="label-xs mt-2">Impact</div>
         <div className="mt-1">

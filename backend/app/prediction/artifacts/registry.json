@@ -1,0 +1,103 @@
+{
+  "eta": {
+    "model_name": "eta",
+    "version": "1.0.0",
+    "trained_at": "2026-08-18T06:18:39.066802",
+    "dataset_version": "twin-40ep-21341rows",
+    "features": [
+      "current_delay_seconds",
+      "distance_remaining_m",
+      "current_speed_kmh",
+      "scheduled_remaining_seconds",
+      "train_type",
+      "priority_class",
+      "dwell_remaining_seconds",
+      "number_of_stops_remaining",
+      "next_resource_dist_m",
+      "junction_congestion",
+      "downstream_train_count",
+      "average_recent_delay",
+      "headway_seconds",
+      "route_congestion",
+      "blocked_ahead",
+      "time_of_day"
+    ],
+    "metrics": {
+      "mae": 1.95,
+      "rmse": 3.11,
+      "baseline_mae": 11.82,
+      "baseline_rmse": 16.16,
+      "n_test": 2182
+    },
+    "artifact_path": "eta.ubj"
+  },
+  "delay": {
+    "model_name": "delay",
+    "version": "1.0.0",
+    "trained_at": "2026-08-18T06:18:39.066802",
+    "dataset_version": "twin-40ep-21341rows",
+    "features": [
+      "current_delay_seconds",
+      "distance_remaining_m",
+      "current_speed_kmh",
+      "scheduled_remaining_seconds",
+      "train_type",
+      "priority_class",
+      "dwell_remaining_seconds",
+      "number_of_stops_remaining",
+      "next_resource_dist_m",
+      "junction_congestion",
+      "downstream_train_count",
+      "average_recent_delay",
+      "headway_seconds",
+      "route_congestion",
+      "blocked_ahead",
+      "time_of_day"
+    ],
+    "metrics": {
+      "mae": 3.08,
+      "rmse": 13.62,
+      "baseline_mae": 4.62,
+      "baseline_rmse": 26.08,
+      "n_test": 3183
+    },
+    "artifact_path": "delay.ubj"
+  },
+  "conflict": {
+    "model_name": "conflict",
+    "version": "1.0.0",
+    "trained_at": "2026-08-18T06:18:39.066802",
+    "dataset_version": "twin-40ep-21341rows",
+    "features": [
+      "current_delay_seconds",
+      "distance_remaining_m",
+      "current_speed_kmh",
+      "scheduled_remaining_seconds",
+      "train_type",
+      "priority_class",
+      "dwell_remaining_seconds",
+      "number_of_stops_remaining",
+      "next_resource_dist_m",
+      "junction_congestion",
+      "downstream_train_count",
+      "average_recent_delay",
+      "headway_seconds",
+      "route_congestion",
+      "blocked_ahead",
+      "time_of_day"
+    ],
+    "metrics": {
+      "precision": 1.0,
+      "recall": 0.791,
+      "f1": 0.883,
+      "baseline_precision": 0.75,
+      "baseline_recall": 0.574,
+      "baseline_f1": 0.65,
+      "positives": 230,
+      "n_test": 3183,
+      "roc_auc": 0.997,
+      "baseline_roc_auc": 0.78
+    },
+    "artifact_path": "conflict.ubj"
+  }
+}

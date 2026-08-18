@@ -281,6 +281,47 @@ export interface ScenarioDefinition {
   description: string;
 }
 
+/** One edge of the delay-dependency graph — a computed cause of added delay. */
+export interface CausalLink {
+  cause_type: string;
+  cause_entity: string;
+  affected_train: string;
+  resource: string;
+  added_delay_seconds: number;
+  timestamp: number;
+}
+
+/** Per-cause delay breakdown for one train (seconds). Powers explainability. */
+export interface DelayBreakdown {
+  base_schedule: number;
+  dwell: number;
+  block_wait: number;
+  junction_wait: number;
+  platform_wait: number;
+  headway_wait: number;
+  event: number;
+  hold: number;
+  regulation: number;
+  total: number;
+}
+
+/** Top contributing features behind one ML prediction. */
+export interface FeatureContribution {
+  feature: string;
+  value: number;
+  contribution: number;
+}
+
+/** ML prediction attached to a train or conflict (Phase 4). */
+export interface MLPrediction {
+  target: "ETA" | "DELAY" | "CONFLICT";
+  value: number;
+  confidence: number;
+  status: "OK" | "LOW_CONFIDENCE";
+  modelVersion: string;
+  contributions: FeatureContribution[];
+}
+
 export interface TwinSnapshot {
   simTimeSec: number;
   /** Epoch millis of the authoritative simulation clock. */

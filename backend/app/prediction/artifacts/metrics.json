@@ -1,0 +1,28 @@
+{
+  "eta": {
+    "mae": 1.95,
+    "rmse": 3.11,
+    "baseline_mae": 11.82,
+    "baseline_rmse": 16.16,
+    "n_test": 2182
+  },
+  "delay": {
+    "mae": 3.08,
+    "rmse": 13.62,
+    "baseline_mae": 4.62,
+    "baseline_rmse": 26.08,
+    "n_test": 3183
+  },
+  "conflict": {
+    "precision": 1.0,
+    "recall": 0.791,
+    "f1": 0.883,
+    "baseline_precision": 0.75,
+    "baseline_recall": 0.574,
+    "baseline_f1": 0.65,
+    "positives": 230,
+    "n_test": 3183,
+    "roc_auc": 0.997,
+    "baseline_roc_auc": 0.78
+  }
+}

@@ -6,8 +6,44 @@
  * deterministic engine in the browser. A FastAPI + WebSocket source can be
  * dropped in behind the same interface without touching any component.
  */
-import type { ResolutionAction, ScenarioId } from "@/domain/types";
+import type {
+  CausalLink,
+  Conflict,
+  DecisionOutcome,
+  DelayBreakdown,
+  KPISet,
+  MLPrediction,
+  OptionOutcome,
+  Prediction,
+  Recommendation,
+  ResolutionAction,
+  ScenarioId,
+} from "@/domain/types";
 import { advanceTo, applyAction, createSimState, tick, type SimState } from "@/twin/engine";
+
+/**
+ * Everything the authoritative backend computes for one live frame. When a
+ * WebSocket source is connected the store renders these directly (the brain is
+ * the Python backend); the mock source leaves it null and the console derives
+ * the same values locally as an offline fallback.
+ */
+export interface TwinBundle {
+  connection: "CONNECTED" | "SIMULATED" | "OFFLINE";
+  simState: SimState;
+  prediction: Prediction;
+  kpis: KPISet;
+  baselineKpis?: KPISet | null;
+  options?: OptionOutcome[];
+  optionsByConflict?: Record<string, OptionOutcome[]>;
+  recommendation?: Recommendation | null;
+  recommendationByConflict?: Record<string, Recommendation | null>;
+  causalChain?: CausalLink[];
+  delayBuckets?: Record<string, DelayBreakdown>;
+  mlByTrain?: Record<string, MLPrediction[]>;
+  mlByConflict?: Record<string, MLPrediction>;
+  playing?: boolean;
+  speed?: number;
+}
 
 export interface TwinDataSource {
   readonly kind: "MOCK" | "WEBSOCKET";
@@ -20,6 +56,14 @@ export interface TwinDataSource {
   applyAction(action: ResolutionAction): void;
   loadScenario(scenario: ScenarioId): void;
   connectionState(): "CONNECTED" | "SIMULATED" | "OFFLINE";
+  /** Backend-computed frame, or null when the source derives locally. */
+  getBundle?(): TwinBundle | null;
+  /** Play/pause the authoritative clock (no-op for the local mock). */
+  setPlaying?(v: boolean): void;
+  /** Set the authoritative clock speed (no-op for the local mock). */
+  setSpeed?(v: number): void;
+  /** Record a controller decision on the backend (accept/modify/reject). */
+  decide?(conflict: Conflict, action: ResolutionAction, outcome: DecisionOutcome, note: string): void;
 }
 
 export class MockTwinSource implements TwinDataSource {

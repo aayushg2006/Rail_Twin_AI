@@ -13,9 +13,15 @@ const NAV = [
 ] as const;
 
 export function TopBar() {
-  const { sim, prediction, scenario, loadScenario, horizonOffset } = useTwin();
+  const { sim, prediction, scenario, loadScenario, horizonOffset, connection } = useTwin();
   const clock = clockOf(sim.epochStartMs + sim.simTimeSec * 1000);
   const critical = prediction.conflicts.filter((c) => c.severity === "CRITICAL").length;
+  const link =
+    connection === "CONNECTED"
+      ? { dot: "bg-ok", text: "Backend twin · live" }
+      : connection === "SIMULATED"
+        ? { dot: "bg-warning", text: "In-browser sim · offline" }
+        : { dot: "bg-faint", text: "Connecting to twin…" };
 
   return (
     <header className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-border bg-shell px-3 py-1.5">
@@ -54,8 +60,8 @@ export function TopBar() {
 
       <div className="ml-auto flex items-center gap-3">
         <span className="flex items-center gap-1.5">
-          <span className="h-1.5 w-1.5 bg-ok" />
-          <span className="label-xs">Twin synchronised · synthetic feed</span>
+          <span className={`h-1.5 w-1.5 ${link.dot}`} />
+          <span className="label-xs">{link.text}</span>
         </span>
         <select
           value={scenario}

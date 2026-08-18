@@ -9,10 +9,13 @@ import {
   type ReactNode,
 } from "react";
 import type {
+  CausalLink,
   Conflict,
   DecisionOutcome,
   DecisionRecord,
+  DelayBreakdown,
   KPISet,
+  MLPrediction,
   OptionOutcome,
   Point,
   Prediction,
@@ -20,7 +23,8 @@ import type {
   ResolutionAction,
   ScenarioId,
 } from "@/domain/types";
-import { MockTwinSource } from "@/data/source";
+import { MockTwinSource, type TwinBundle, type TwinDataSource } from "@/data/source";
+import { WebSocketTwinSource } from "@/data/wsSource";
 import {
   applyAction,
   computeKPIs,
@@ -32,7 +36,18 @@ import {
 } from "./engine";
 import { clockOf } from "./format";
 
-export type SimSpeed = 1 | 2 | 5 | 10;
+export type SimSpeed = 1 | 2 | 5 | 10 | 20;
+export type ConnectionState = "CONNECTED" | "SIMULATED" | "OFFLINE";
+
+/** Pick the authoritative source: the Python backend over WebSocket when
+ *  reachable, else the in-browser deterministic mock (offline fallback). */
+function createSource(scenario: ScenarioId, epochStartMs: number): TwinDataSource {
+  if (typeof window === "undefined") return new MockTwinSource(scenario, epochStartMs);
+  const env = (import.meta as { env?: Record<string, string> }).env ?? {};
+  const url = env["VITE_BACKEND_WS_URL"] ?? `ws://${window.location.hostname}:8000/ws`;
+  if (!url) return new MockTwinSource(scenario, epochStartMs);
+  return new WebSocketTwinSource(url, scenario, epochStartMs);
+}
 
 export interface LayerFlags {
   infrastructure: boolean;
@@ -74,6 +89,16 @@ interface TwinContextValue {
   scenario: ScenarioId;
   decisions: DecisionRecord[];
   baselineKpis: KPISet | null;
+  /** Live link state to the backend brain. */
+  connection: ConnectionState;
+  /** Computed delay-dependency chain (backend), for the propagation panel. */
+  causalChain: CausalLink[];
+  /** Per-train per-cause delay breakdown (backend), for explainability. */
+  delayBuckets: Record<string, DelayBreakdown>;
+  /** ML predictions keyed by conflict id (backend). */
+  mlByConflict: Record<string, MLPrediction>;
+  /** ML predictions keyed by train id (backend). */
+  mlByTrain: Record<string, MLPrediction[]>;
   setPlaying: (v: boolean) => void;
   setSpeed: (v: SimSpeed) => void;
   setHorizonOffset: (v: number) => void;
@@ -99,13 +124,15 @@ const TwinContext = createContext<TwinContextValue | null>(null);
 const TICK_MS = 250;
 
 export function TwinProvider({ children }: { children: ReactNode }) {
-  const sourceRef = useRef<MockTwinSource | null>(null);
-  if (!sourceRef.current) sourceRef.current = new MockTwinSource("BASE", Date.parse("2026-03-11T16:44:00+05:30"));
+  const sourceRef = useRef<TwinDataSource | null>(null);
+  if (!sourceRef.current)
+    sourceRef.current = createSource("BASE", Date.parse("2026-03-11T16:44:00+05:30"));
   const source = sourceRef.current;
 
   const [sim, setSim] = useState<SimState>(() => source.getState());
-  const [playing, setPlaying] = useState(true);
-  const [speed, setSpeed] = useState<SimSpeed>(2);
+  const [bundle, setBundle] = useState<TwinBundle | null>(() => source.getBundle?.() ?? null);
+  const [playing, setPlayingState] = useState(true);
+  const [speed, setSpeedState] = useState<SimSpeed>(5);
   const [horizonOffset, setHorizonOffset] = useState(0);
   const [selectedTrainId, setSelectedTrainId] = useState<string | null>(null);
   const [selectedConflictId, setSelectedConflictId] = useState<string | null>(null);
@@ -121,10 +148,35 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     decision: true,
   });
 
-  useEffect(() => source.subscribe(setSim), [source]);
+  useEffect(
+    () =>
+      source.subscribe((s) => {
+        setSim(s);
+        setBundle(source.getBundle?.() ?? null);
+      }),
+    [source],
+  );
+
+  // Keep the authoritative clock's play/speed intent in sync with the UI.
+  const setPlaying = useCallback(
+    (v: boolean) => {
+      setPlayingState(v);
+      source.setPlaying?.(v);
+    },
+    [source],
+  );
+  const setSpeed = useCallback(
+    (v: SimSpeed) => {
+      setSpeedState(v);
+      source.setSpeed?.(v);
+    },
+    [source],
+  );
 
   useEffect(() => {
     if (!playing) return;
+    // When the backend is authoritative, advance() is a no-op (the backend
+    // drives the clock); only the offline mock ticks locally here.
     const id = window.setInterval(() => {
       source.advance((TICK_MS / 1000) * speed);
     }, TICK_MS);
@@ -134,13 +186,16 @@ export function TwinProvider({ children }: { children: ReactNode }) {
   // Predictions are recomputed on a coarse cadence so the horizon is stable
   // while trains animate smoothly.
   const predictionKey = Math.floor(sim.simTimeSec / 2);
-  const prediction = useMemo(
+  const localPrediction = useMemo(
     () => predict(sim),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [predictionKey, sim.scenario, sim.appliedActions.length, sim.blockedResources.join()],
   );
+  // Backend-computed prediction wins when connected; otherwise derive locally.
+  const prediction = bundle?.prediction ?? localPrediction;
 
-  const kpis = useMemo(() => computeKPIs(sim, prediction), [sim, prediction]);
+  const localKpis = useMemo(() => computeKPIs(sim, prediction), [sim, prediction]);
+  const kpis = bundle?.kpis ?? localKpis;
 
   useEffect(() => {
     setBaselineKpis((prev) => prev ?? kpis);
@@ -155,16 +210,28 @@ export function TwinProvider({ children }: { children: ReactNode }) {
   }, [prediction, selectedConflictId]);
 
   const optionsKey = `${selectedConflict?.id ?? ""}|${Math.floor(sim.simTimeSec / 10)}|${sim.appliedActions.length}`;
-  const options = useMemo(
+  const localOptions = useMemo(
     () => (selectedConflict ? generateOptions(sim, selectedConflict) : []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [optionsKey],
   );
+  // Backend (OR-Tools) options win when present for the selected conflict.
+  const backendOptions =
+    selectedConflict && bundle
+      ? (bundle.optionsByConflict?.[selectedConflict.id] ?? bundle.options)
+      : undefined;
+  const options = backendOptions ?? localOptions;
 
-  const recommendation = useMemo(
-    () => (selectedConflict ? recommend(selectedConflict, options) : null),
-    [selectedConflict, options],
+  const localRecommendation = useMemo(
+    () => (selectedConflict ? recommend(selectedConflict, localOptions) : null),
+    [selectedConflict, localOptions],
   );
+  const backendRecommendation =
+    selectedConflict && bundle
+      ? (bundle.recommendationByConflict?.[selectedConflict.id] ?? bundle.recommendation)
+      : undefined;
+  const recommendation =
+    backendRecommendation !== undefined ? backendRecommendation : localRecommendation;
 
   const view = useMemo(
     () => (horizonOffset > 0 ? projectStateAt(sim, horizonOffset) : sim),
@@ -213,10 +280,14 @@ export function TwinProvider({ children }: { children: ReactNode }) {
         kpiBefore: kpis,
       };
       setDecisions((d) => [record, ...d]);
-      if (outcome !== "REJECTED") {
+      // Prefer the backend decision path (safety re-validation + audit log);
+      // fall back to a direct action apply for the offline mock.
+      if (source.decide) {
+        source.decide(conflict, action, outcome, note);
+      } else if (outcome !== "REJECTED") {
         source.applyAction(action);
-        setHorizonOffset(0);
       }
+      if (outcome !== "REJECTED") setHorizonOffset(0);
     },
     [selectedConflict, sim, kpis, source],
   );
@@ -293,7 +364,12 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     layers,
     scenario: sim.scenario,
     decisions,
-    baselineKpis,
+    baselineKpis: bundle?.baselineKpis ?? baselineKpis,
+    connection: source.connectionState(),
+    causalChain: bundle?.causalChain ?? [],
+    delayBuckets: bundle?.delayBuckets ?? {},
+    mlByConflict: bundle?.mlByConflict ?? {},
+    mlByTrain: bundle?.mlByTrain ?? {},
     setPlaying,
     setSpeed,
     setHorizonOffset,
