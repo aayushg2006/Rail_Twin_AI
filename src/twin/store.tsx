@@ -68,6 +68,12 @@ export type Selection =
   | { kind: "conflict"; id: string }
   | null;
 
+export interface AcknowledgedDecision {
+  conflictId: string;
+  optionTitle: string;
+  outcome: DecisionOutcome;
+}
+
 interface TwinContextValue {
   /** Authoritative live state. */
   sim: SimState;
@@ -109,6 +115,12 @@ interface TwinContextValue {
   mlByConflict: Record<string, MLPrediction>;
   /** ML predictions keyed by train id (backend). */
   mlByTrain: Record<string, MLPrediction[]>;
+  /** The last controller response whose What-if preview was closed. */
+  acknowledgedDecision: AcknowledgedDecision | null;
+  modelStatus: {
+    optimizer: { status: string; reason: string };
+    ml: { status: string; reason: string };
+  };
   suggestionRevision: number | null;
   clockMode: ClockMode;
   decisionStatus: { status: string; reason?: string } | null;
@@ -151,6 +163,7 @@ export function TwinProvider({ children }: { children: ReactNode }) {
   const [horizonOffset, setHorizonOffset] = useState(0);
   const [selectedTrainId, setSelectedTrainId] = useState<string | null>(null);
   const [selectedConflictId, setSelectedConflictId] = useState<string | null>(null);
+  const [acknowledgedDecision, setAcknowledgedDecision] = useState<AcknowledgedDecision | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
   const [focusMode, setFocusMode] = useState(false);
   const [previewOptionId, setPreviewOptionId] = useState<string | null>(null);
@@ -218,11 +231,23 @@ export function TwinProvider({ children }: { children: ReactNode }) {
   }, [sim.scenario]);
 
   const selectedConflict = useMemo(() => {
-    if (prediction.conflicts.length === 0) return null;
+    const visibleConflicts = acknowledgedDecision
+      ? prediction.conflicts.filter((c) => c.id !== acknowledgedDecision.conflictId)
+      : prediction.conflicts;
+    if (visibleConflicts.length === 0) return null;
     return (
-      prediction.conflicts.find((c) => c.id === selectedConflictId) ?? prediction.conflicts[0]!
+      visibleConflicts.find((c) => c.id === selectedConflictId) ?? visibleConflicts[0]!
     );
-  }, [prediction, selectedConflictId]);
+  }, [prediction, selectedConflictId, acknowledgedDecision]);
+
+  // Once the accepted action clears its original conflict from the live
+  // prediction, the acknowledgement has served its purpose. If it remains,
+  // keep it hidden until the controller explicitly selects it again.
+  useEffect(() => {
+    if (acknowledgedDecision && !prediction.conflicts.some((c) => c.id === acknowledgedDecision.conflictId)) {
+      setAcknowledgedDecision(null);
+    }
+  }, [prediction, acknowledgedDecision]);
 
   const optionsKey = `${selectedConflict?.id ?? ""}|${Math.floor(sim.simTimeSec / 10)}|${sim.appliedActions.length}`;
   const localOptions = useMemo(
@@ -237,8 +262,15 @@ export function TwinProvider({ children }: { children: ReactNode }) {
       : undefined;
   const options = backendOptions ?? localOptions;
 
-  const localRecommendation = useMemo(
-    () => (selectedConflict ? recommend(selectedConflict, localOptions) : null),
+  const localRecommendation = useMemo(() => {
+    if (selectedConflict) return recommend(selectedConflict, localOptions)!;
+    return {
+      mode: "MONITORING", status: "NO_CONFLICT", conflictId: null, optionId: null,
+      rationale: "No resource contention is predicted in the current 15-minute horizon; no intervention is required.",
+      expectedOutcome: "Continue monitoring the network and advance the timeline for the next event.",
+      alternatives: [],
+    } as Recommendation;
+  },
     [selectedConflict, localOptions],
   );
   const backendRecommendation =
@@ -247,6 +279,27 @@ export function TwinProvider({ children }: { children: ReactNode }) {
       : undefined;
   const recommendation =
     backendRecommendation !== undefined ? backendRecommendation : localRecommendation;
+
+  // Scenario changes begin at the demo snapshot. If a conflict is already in
+  // the horizon, focus the earliest one and move the backend clock close to it
+  // so the decision panel is immediately useful. A scenario with no conflict
+  // remains at NOW and renders the monitoring response instead.
+  useEffect(() => {
+    const earliest = [...prediction.conflicts].sort((a, b) => a.etaSec - b.etaSec)[0];
+    if (!earliest) {
+      setSelectedConflictId(null);
+      return;
+    }
+    setSelectedConflictId(earliest.id);
+    const focusAt = sim.simTimeSec + Math.max(0, earliest.etaSec - 45);
+    if (focusAt > sim.simTimeSec + 1) {
+      setPlayingState(false);
+      source.setPlaying?.(false);
+      source.seek(focusAt);
+    }
+    // Only run this automatic focus when the selected scenario changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sim.scenario]);
 
   const view = useMemo(
     () => (horizonOffset > 0 ? projectStateAt(sim, horizonOffset) : sim),
@@ -298,13 +351,21 @@ export function TwinProvider({ children }: { children: ReactNode }) {
       // Prefer the backend decision path (safety re-validation + audit log);
       // fall back to a direct action apply for the offline mock.
       if (source.decide) {
-        source.decide(conflict, action, outcome, note, bundle?.suggestionRevision);
+        source.decide(conflict, action, outcome, note, bundle?.suggestionRevision, option.responseClass);
       } else if (outcome !== "REJECTED") {
         source.applyAction(action);
       }
-      if (outcome !== "REJECTED") setHorizonOffset(0);
+      // Close the What-if decision view for every controller response. A
+      // rejection must not leave the same recommendation/actions open, and a
+      // backend safety rejection of a modified action is still a completed
+      // controller response from the UI's point of view.
+      setHorizonOffset(0);
+      setAcknowledgedDecision({ conflictId: conflict.id, optionTitle: option.title, outcome });
+      setSelectedConflictId(null);
+      setSelection(null);
+      setPreviewOptionId(null);
     },
-    [selectedConflict, sim, kpis, source],
+    [selectedConflict, sim, kpis, source, bundle],
   );
 
 
@@ -327,6 +388,7 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     (id: ScenarioId) => {
       source.loadScenario(id);
       setSelectedConflictId(null);
+      setAcknowledgedDecision(null);
       setSelectedTrainId(null);
       setSelection(null);
       setFocusMode(false);
@@ -346,6 +408,7 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     (scenario: CustomScenario) => {
       source.loadCustomScenario?.(scenario);
       setSelectedConflictId(null);
+      setAcknowledgedDecision(null);
       setPreviewOptionId(null);
       setHorizonOffset(0);
       setBaselineKpis(null);
@@ -364,6 +427,7 @@ export function TwinProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const selectConflict = useCallback((id: string | null) => {
+    if (id) setAcknowledgedDecision(null);
     setSelectedConflictId(id);
     setSelection(id ? { kind: "conflict", id } : null);
     setPreviewOptionId(null);
@@ -371,6 +435,7 @@ export function TwinProvider({ children }: { children: ReactNode }) {
 
   const select = useCallback((sel: Selection) => {
     setSelection(sel);
+    if (sel?.kind === "conflict") setAcknowledgedDecision(null);
     if (sel?.kind === "train") setSelectedTrainId(sel.id);
     else if (sel?.kind === "conflict") setSelectedConflictId(sel.id);
     else if (!sel) setSelectedTrainId(null);
@@ -405,6 +470,11 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     delayBuckets: bundle?.delayBuckets ?? {},
     mlByConflict: bundle?.mlByConflict ?? {},
     mlByTrain: bundle?.mlByTrain ?? {},
+    acknowledgedDecision,
+    modelStatus: bundle?.modelStatus ?? {
+      optimizer: { status: "READY", reason: "In-browser deterministic optimizer" },
+      ml: { status: "DETERMINISTIC_FALLBACK", reason: "In-browser deterministic projection" },
+    },
     suggestionRevision: bundle?.suggestionRevision ?? null,
     clockMode: bundle?.clockMode ?? sim.clockMode,
     decisionStatus: bundle?.lastDecisionStatus ?? null,

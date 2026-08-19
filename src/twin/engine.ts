@@ -734,15 +734,67 @@ export function generateOptions(
     );
   }
 
-  return options;
+  const containment = options
+    .filter((o) => o.feasible && (o.action.kind === "HOLD" || o.action.kind === "SPEED_REGULATION"))
+    .map((o) => ({
+      ...o,
+      id: `CONTAIN-${o.id}`,
+      responseClass: "CONTAINMENT" as const,
+      conflictResolved: false,
+      safety: {
+        ...o.safety,
+        passed: o.safety.checks.filter((check) => check.id !== "SEP" && check.id !== "PLT").every((check) => check.passed),
+        checks: [
+          ...o.safety.checks.map((check) => check.id === "PLT"
+            ? { ...check, passed: true, detail: "Movement protected before the unavailable resource" }
+            : check),
+          { id: "PROTECT", label: "Protective containment command", passed: true, detail: "Hold/regulation prevents unsafe entry while the conflict remains under protection" },
+        ],
+      },
+    }));
+  return [...options, ...containment];
 }
 
 export function recommend(
   conflict: Conflict,
   options: OptionOutcome[],
 ): Recommendation | null {
-  const viable = options.filter((o) => o.feasible && o.conflictResolved && o.safety.passed);
-  if (viable.length === 0) return null;
+  const viable = options.filter((o) => o.responseClass !== "CONTAINMENT" && o.feasible && o.conflictResolved && o.safety.passed);
+  const normal = options.filter((o) => o.responseClass !== "CONTAINMENT");
+  const failureMetrics = {
+    candidateCount: normal.length,
+    feasibleCandidateCount: normal.filter((o) => o.feasible).length,
+    safetyPassingCandidateCount: normal.filter((o) => o.safety.passed).length,
+    conflictClearingCandidateCount: normal.filter((o) => o.conflictResolved).length,
+    actualSeparationSec: conflict.separationSec,
+    requiredSeparationSec: conflict.requiredSeparationSec,
+    separationDeficitSec: Math.max(0, conflict.requiredSeparationSec - conflict.separationSec),
+    residualCriticalConflicts: Math.max(...normal.map((o) => o.residualConflicts), 0),
+    residualWarningConflicts: 0,
+    failedSafetyChecks: normal.flatMap((o) => o.safety.checks.filter((c) => !c.passed)).filter((c, i, all) => all.findIndex((x) => x.id === c.id) === i),
+    infeasibleReasons: normal.filter((o) => o.infeasibleReason).map((o) => ({ candidate: o.title, reason: o.infeasibleReason! })),
+    blockedResources: [], unavailableRoutes: [], headwayMultiplier: 1,
+    networkDelaySec: Math.min(...normal.map((o) => o.networkDelaySec), 0),
+    passengerDelaySec: Math.min(...normal.map((o) => o.passengerDelaySec), 0),
+    freightDelaySec: Math.min(...normal.map((o) => o.freightDelaySec), 0),
+    weightedDelaySec: Math.min(...normal.map((o) => o.weightedDelaySec ?? 0), 0),
+    primaryFailureReason: "No safe candidate clears the conflict",
+  };
+  if (viable.length === 0) {
+    const containment = options
+      .filter((o) => o.responseClass === "CONTAINMENT" && o.feasible && o.safety.passed)
+      .sort((a, b) => a.residualConflicts - b.residualConflicts || (a.action.holdSec ?? 0) - (b.action.holdSec ?? 0))[0];
+    return containment ? {
+      mode: "CONTAINMENT", status: "NO_SAFE_RESOLUTION", conflictId: conflict.id, optionId: containment.id,
+      rationale: `Full resolution is unavailable at ${conflict.resourceLabel}. Recommended safe containment: ${containment.title}.`,
+      expectedOutcome: "Movement protected without claiming the unavailable resource is restored.",
+      alternatives: [], failureMetrics,
+    } : {
+      mode: "CONTAINMENT", status: "NO_SAFE_RESOLUTION", conflictId: conflict.id, optionId: null,
+      rationale: "No safe containment command could be generated; interlocking and the section controller must protect the movement.",
+      expectedOutcome: "No automatic movement command is available.", alternatives: [], failureMetrics,
+    };
+  }
   // Delay is weighted per train by economic value, so a premium/express delay
   // dominates the cost and the low-value movement gives way. Throughput is a
   // secondary reward, never large enough to override protecting a high-value
@@ -761,6 +813,8 @@ export function recommend(
   const give = fleetById[best.action.trainId];
   const clsOf = (t: typeof keep) => (t?.serviceClass ?? t?.type ?? "").toLowerCase().replace(/_/g, " ");
   return {
+    mode: "RESOLUTION",
+    status: "READY",
     conflictId: conflict.id,
     optionId: best.id,
     rationale:
@@ -770,6 +824,7 @@ export function recommend(
           : `Holding ${give.id} (${clsOf(give)}, economic weight ${economicWeight(give.id)}) clears ${conflict.resourceLabel} at the lowest network cost; ${keep.id} (${clsOf(keep)}, economic weight ${economicWeight(keep.id)}) keeps its path.`
         : `Applies the lowest-cost feasible regulation for ${conflict.resourceLabel}.`,
     expectedOutcome: `${conflict.kind.replace(/_/g, " ").toLowerCase()} cleared; separation restored to at least ${Math.round(conflict.requiredSeparationSec)} s over ${conflict.resourceId}.`,
+    failureMetrics,
     alternatives: others.map(
       (o) => `${o.title} — network ${(o.networkDelaySec / 60).toFixed(1)} min`,
     ),

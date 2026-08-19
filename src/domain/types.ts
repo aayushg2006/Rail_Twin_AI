@@ -180,7 +180,7 @@ export type ConnectionStatus = "CONNECTED" | "RECONNECTING" | "SIMULATED" | "OFF
 
 export interface GlobalPlan {
   id: string;
-  status: "COMPLETE" | "PARTIAL" | "NO_SAFE_PLAN";
+  status: "COMPLETE" | "PARTIAL" | "NO_SAFE_PLAN" | "MONITORING";
   actions: ResolutionAction[];
   clearedConflicts: string[];
   residualConflicts: string[];
@@ -294,6 +294,7 @@ export interface OptionOutcome {
   residualConflicts: number;
   feasible: boolean;
   infeasibleReason?: string;
+  responseClass?: "RESOLUTION" | "CONTAINMENT";
 }
 
 export interface SafetyValidation {
@@ -301,12 +302,43 @@ export interface SafetyValidation {
   checks: { id: string; label: string; passed: boolean; detail: string }[];
 }
 
+export interface FailureMetricCheck {
+  id: string;
+  label: string;
+  detail: string;
+}
+
+export interface FailureMetrics {
+  candidateCount: number;
+  feasibleCandidateCount: number;
+  safetyPassingCandidateCount: number;
+  conflictClearingCandidateCount: number;
+  actualSeparationSec: number | null;
+  requiredSeparationSec: number | null;
+  separationDeficitSec: number;
+  residualCriticalConflicts: number;
+  residualWarningConflicts: number;
+  failedSafetyChecks: FailureMetricCheck[];
+  infeasibleReasons: { candidate: string; reason: string }[];
+  blockedResources: string[];
+  unavailableRoutes: string[];
+  headwayMultiplier: number;
+  networkDelaySec: number;
+  passengerDelaySec: number;
+  freightDelaySec: number;
+  weightedDelaySec: number;
+  primaryFailureReason: string;
+}
+
 export interface Recommendation {
-  conflictId: string;
-  optionId: string;
+  mode: "RESOLUTION" | "CONTAINMENT" | "MONITORING";
+  status: "READY" | "NO_SAFE_RESOLUTION" | "NO_CONFLICT";
+  conflictId: string | null;
+  optionId: string | null;
   rationale: string;
   expectedOutcome: string;
   alternatives: string[];
+  failureMetrics?: FailureMetrics;
 }
 
 export interface KPISet {

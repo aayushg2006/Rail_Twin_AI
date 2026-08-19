@@ -65,6 +65,10 @@ export interface TwinBundle {
   serviceDate?: string;
   persistenceStatus?: string;
   lastDecisionStatus?: { status: string; reason?: string };
+  modelStatus?: {
+    optimizer: { status: string; reason: string };
+    ml: { status: string; reason: string };
+  };
 }
 
 export interface TwinDataSource {
@@ -93,6 +97,7 @@ export interface TwinDataSource {
     outcome: DecisionOutcome,
     note: string,
     expectedRevision?: number,
+    responseMode?: "RESOLUTION" | "CONTAINMENT",
   ): void;
 }
 

@@ -142,12 +142,13 @@ export class WebSocketTwinSource implements TwinDataSource {
     this.send({ cmd: "apply_action", action });
   }
 
-  decide(conflict: Conflict, action: ResolutionAction, outcome: DecisionOutcome, note: string, expectedRevision?: number) {
+  decide(conflict: Conflict, action: ResolutionAction, outcome: DecisionOutcome, note: string, expectedRevision?: number,
+         responseMode?: "RESOLUTION" | "CONTAINMENT") {
     if (this.usingFallback) {
       if (outcome !== "REJECTED") this.fallback.applyAction(action);
       return;
     }
-    this.send({ cmd: "decide", conflictId: conflict.id, action, outcome, note, expectedRevision });
+    this.send({ cmd: "decide", conflictId: conflict.id, action, outcome, note, expectedRevision, responseMode });
   }
 
   loadScenario(scenario: ScenarioId) {

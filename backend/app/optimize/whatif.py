@@ -39,6 +39,7 @@ class OptionEval:
     residual_conflicts: int
     feasible: bool
     infeasible_reason: str | None = None
+    response_class: str = "RESOLUTION"
 
     def as_dict(self) -> dict:
         return {
@@ -55,6 +56,7 @@ class OptionEval:
             "safety": self.safety,
             "residualConflicts": self.residual_conflicts,
             "feasible": self.feasible,
+            "responseClass": self.response_class,
             **({"infeasibleReason": self.infeasible_reason} if self.infeasible_reason else {}),
         }
 
@@ -89,11 +91,12 @@ def weighted_throughput_within(state: AnalyticState, horizon: float) -> float:
 
 
 def evaluate(base: AnalyticState, base_delays: dict[str, float], cand: Candidate,
-             conflict: Conflict, horizon: float = HORIZON) -> OptionEval:
+             conflict: Conflict, horizon: float = HORIZON,
+             response_class: str = "RESOLUTION") -> OptionEval:
     if cand.infeasible_reason:
         return OptionEval(cand.id, cand.letter, cand.title, cand.action, False, {}, 0, 0, 0, 0, 0, 0.0,
-                          cand.infrastructure_change, {"passed": False, "checks": []}, 0, False,
-                          cand.infeasible_reason)
+                          cand.infrastructure_change, {"passed": False, "checks": [], "mode": response_class}, 0, False,
+                          cand.infeasible_reason, response_class)
 
     after = apply_action(base, cand.action)
     pred = predict(after, horizon)
@@ -108,6 +111,9 @@ def evaluate(base: AnalyticState, base_delays: dict[str, float], cand: Candidate
 
     still = any(c.severity == "CRITICAL" and same_causal_conflict(c) for c in pred.conflicts)
     resolved = not still
+    # Containment protects the movement but deliberately does not represent
+    # complete conflict resolution in the public response contract.
+    reported_resolved = resolved if response_class == "RESOLUTION" else False
     after_delays = delay_profile(after)
     added: dict[str, float] = {}
     network = passenger = freight = weighted = 0.0
@@ -131,7 +137,7 @@ def evaluate(base: AnalyticState, base_delays: dict[str, float], cand: Candidate
     after_thru = throughput_within(after, horizon)
     wthru_delta = weighted_throughput_within(after, horizon) - weighted_throughput_within(base, horizon)
     return OptionEval(
-        cand.id, cand.letter, cand.title, cand.action, resolved, added,
+        cand.id, cand.letter, cand.title, cand.action, reported_resolved, added,
         network, passenger, freight, weighted, after_thru - base_thru, wthru_delta,
-        cand.infrastructure_change, validate(cand.action, after, conflict, resolved),
-        residual, True)
+        cand.infrastructure_change, validate(cand.action, after, conflict, resolved, response_class),
+        residual, True, None, response_class)

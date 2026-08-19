@@ -2,10 +2,11 @@ import { useState } from "react";
 import { useTwin } from "@/twin/store";
 import { fleetById } from "@/twin/scenario";
 import { mmss, signedMin } from "@/twin/format";
+import type { FailureMetrics } from "@/domain/types";
 import { Btn, Panel, PanelHead, Row, Tag } from "./primitives";
 
 export function DecisionPanel({ className }: { className?: string }) {
-  const { recommendation, options, previewOption, selectedConflict, decide, setPreviewOptionId, decisionStatus, globalPlan } =
+  const { recommendation, options, previewOption, selectedConflict, prediction, acknowledgedDecision, decide, setPreviewOptionId, decisionStatus, globalPlan, modelStatus } =
     useTwin();
   const [modify, setModify] = useState(false);
   const [holdSec, setHoldSec] = useState(120);
@@ -13,19 +14,62 @@ export function DecisionPanel({ className }: { className?: string }) {
   const [note, setNote] = useState("");
 
   const { mlByConflict } = useTwin();
-  const rec = recommendation ? options.find((o) => o.id === recommendation.optionId) : null;
+  const rec = recommendation?.optionId ? options.find((o) => o.id === recommendation.optionId) : null;
   const target = previewOption ?? rec;
   const ml = selectedConflict ? mlByConflict[selectedConflict.id] : undefined;
+
+  if (acknowledgedDecision && !selectedConflict) {
+    const stillPredicted = prediction.conflicts.some((c) => c.id === acknowledgedDecision.conflictId);
+    const wasRejected = acknowledgedDecision.outcome === "REJECTED" || decisionStatus?.status === "REJECTED";
+    return (
+      <Panel className={className}>
+        <PanelHead title="Decision" meta={wasRejected ? "DECISION CLOSED" : "LIVE ACTION ACCEPTED"} tone={wasRejected ? "dim" : "ok"} />
+        <div className="px-3 py-4 text-[12px] text-muted-foreground">
+          <p className={wasRejected ? "text-critical" : "text-ok"}>
+            {wasRejected ? "Controller decision rejected." : acknowledgedDecision.outcome === "MODIFIED" ? "Modified action accepted." : "Action accepted."}
+          </p>
+          <p className="mt-1">{acknowledgedDecision.optionTitle}</p>
+          <p className="mt-2 text-[11px] text-faint">
+            {wasRejected
+              ? "The What-if preview is closed. No controller action was applied."
+              : "The What-if preview is closed. The action is now part of the live controller plan and remains subject to interlocking authority."}
+          </p>
+          {stillPredicted ? (
+            <p className="mt-2 text-[11px] text-warning">
+              The original conflict is still present in the current prediction; select it again to inspect a new What-if evaluation.
+            </p>
+          ) : (
+            <p className="mt-2 text-[11px] text-ok">The original conflict is no longer present in the current prediction.</p>
+          )}
+          <ModelStatus modelStatus={modelStatus} />
+        </div>
+      </Panel>
+    );
+  }
+
+  if (recommendation?.mode === "MONITORING") {
+    return (
+      <Panel className={className}>
+        <PanelHead title="Recommendation" meta="MONITORING · no intervention required" tone="ok" />
+        <div className="px-3 py-4 text-[12px] text-muted-foreground">
+          <p>{recommendation.rationale}</p>
+          <p className="mt-2 text-[11px] text-faint">{recommendation.expectedOutcome}</p>
+          <ModelStatus modelStatus={modelStatus} />
+          <FailureMetricsView metrics={recommendation.failureMetrics} />
+        </div>
+      </Panel>
+    );
+  }
 
   if (!selectedConflict || !recommendation || !target) {
     return (
       <Panel className={className}>
         <PanelHead title="Recommendation" meta="AI recommends · human decides" tone="dim" />
-        <p className="px-3 py-4 text-[12px] text-muted-foreground">
-          {!selectedConflict
-            ? "Select a predicted conflict to generate its What-if options."
-            : "No safe action is currently available for this conflict; review the residual network conflicts or the global plan."}
-        </p>
+        <div className="px-3 py-4 text-[12px] text-muted-foreground">
+          <p>{!selectedConflict ? "No conflict is selected; continue monitoring the current horizon." : recommendation?.rationale ?? "No safe action is currently available for this conflict."}</p>
+          <ModelStatus modelStatus={modelStatus} />
+          <FailureMetricsView metrics={recommendation?.failureMetrics} />
+        </div>
       </Panel>
     );
   }
@@ -37,10 +81,16 @@ export function DecisionPanel({ className }: { className?: string }) {
       <PanelHead
         title="Recommendation"
         meta="AI recommends · human decides"
-        tone="selected"
+        tone={recommendation.mode === "CONTAINMENT" ? "warning" : "selected"}
         right={<Tag tone={target.safety.passed ? "ok" : "critical"}>Option {target.letter}</Tag>}
       />
       <div className="min-h-0 overflow-y-auto px-3 py-2">
+        {recommendation.mode === "CONTAINMENT" ? (
+          <div className="mb-2 border border-warning/60 bg-warning/5 px-2 py-1.5 text-[11px]">
+            <div className="font-medium text-warning">Full resolution unavailable</div>
+            <div className="mt-0.5 text-muted-foreground">This safe action protects the movement but does not claim the blocked resource or residual conflicts are resolved.</div>
+          </div>
+        ) : null}
         {globalPlan ? (
           <div className="mb-2 border border-border px-2 py-1 text-[10px]">
             Global plan: <span className="text-selected">{globalPlan.status}</span> · {globalPlan.clearedConflicts.length} cleared · {globalPlan.residualConflicts.length} residual
@@ -56,6 +106,9 @@ export function DecisionPanel({ className }: { className?: string }) {
 
         <div className="label-xs mt-2">Why</div>
         <p className="mt-0.5 text-[12px] text-muted-foreground">{recommendation.rationale}</p>
+        <p className="mt-1 text-[11px] text-faint">{recommendation.expectedOutcome}</p>
+        <ModelStatus modelStatus={modelStatus} />
+        <FailureMetricsView metrics={recommendation.failureMetrics} />
 
         {ml ? (
           <>
@@ -210,5 +263,48 @@ export function DecisionPanel({ className }: { className?: string }) {
         </p>
       </div>
     </Panel>
+  );
+}
+
+function ModelStatus({ modelStatus }: { modelStatus: { optimizer: { status: string; reason: string }; ml: { status: string; reason: string } } }) {
+  return (
+    <div className="mt-3 border-t border-border/60 pt-2 text-[10px] text-faint">
+      <div className="label-xs">Model status</div>
+      <div className="mt-1 grid grid-cols-2 gap-2">
+        <span>Optimizer: <b className="text-foreground">{modelStatus.optimizer.status}</b></span>
+        <span>ML: <b className="text-foreground">{modelStatus.ml.status}</b></span>
+      </div>
+      <div className="mt-1">{modelStatus.ml.reason}</div>
+    </div>
+  );
+}
+
+function FailureMetricsView({ metrics }: { metrics?: FailureMetrics }) {
+  if (!metrics) return null;
+  return (
+    <div className="mt-3 border-t border-border/60 pt-2 text-[10.5px]">
+      <div className="label-xs">Failure metrics</div>
+      <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1 text-muted-foreground">
+        <span>Candidates: {metrics.candidateCount}</span>
+        <span>Safe: {metrics.safetyPassingCandidateCount}</span>
+        <span>Clearing: {metrics.conflictClearingCandidateCount}</span>
+        <span>Residual critical: {metrics.residualCriticalConflicts}</span>
+        <span>Separation: {metrics.actualSeparationSec ?? "—"} / {metrics.requiredSeparationSec ?? "—"} s</span>
+        <span>Deficit: {metrics.separationDeficitSec} s</span>
+        <span>Network delay: {signedMin(metrics.networkDelaySec)}</span>
+        <span>Weighted delay: {signedMin(metrics.weightedDelaySec)}</span>
+      </div>
+      <p className="mt-1 text-warning">Reason: {metrics.primaryFailureReason}</p>
+      {metrics.failedSafetyChecks.length ? (
+        <ul className="mt-1 space-y-0.5 text-critical">
+          {metrics.failedSafetyChecks.map((check) => <li key={check.id}>{check.label}: {check.detail}</li>)}
+        </ul>
+      ) : null}
+      {metrics.infeasibleReasons.length ? (
+        <ul className="mt-1 space-y-0.5 text-critical">
+          {metrics.infeasibleReasons.map((item) => <li key={item.candidate}>{item.candidate}: {item.reason}</li>)}
+        </ul>
+      ) : null}
+    </div>
   );
 }

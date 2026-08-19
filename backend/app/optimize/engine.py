@@ -36,6 +36,7 @@ class OptimizationResult:
     selected: OptionEval | None
     objective_score: float
     recommendation: dict | None
+    failure_metrics: dict
 
 
 class OptimizationEngine:
@@ -45,8 +46,9 @@ class OptimizationEngine:
     def generate_candidates(self, state: AnalyticState, conflict: Conflict):
         return cand_mod.generate(state, conflict)
 
-    def evaluate_candidate(self, state, base_delays, cand, conflict, horizon):
-        return evaluate(state, base_delays, cand, conflict, horizon)
+    def evaluate_candidate(self, state, base_delays, cand, conflict, horizon,
+                           response_class: str = "RESOLUTION"):
+        return evaluate(state, base_delays, cand, conflict, horizon, response_class)
 
     def optimize(self, state: AnalyticState, conflict: Conflict,
                  horizon: float = settings.default_horizon_sec) -> OptimizationResult:
@@ -77,9 +79,39 @@ class OptimizationEngine:
                 selected = evals[chosen]
                 score = float(costs[chosen])
 
+        failure_metrics = self._failure_metrics(state, conflict, evals)
+        if selected is not None:
+            recommendation = self._recommendation(conflict, evals, selected, failure_metrics)
+        else:
+            containment_evals = [
+                self.evaluate_candidate(state, base_delays, cand, conflict, horizon, "CONTAINMENT")
+                for cand in cands
+                if cand.action.kind in ("HOLD", "SPEED_REGULATION")
+            ]
+            for containment in containment_evals:
+                containment.id = f"CONTAIN-{containment.id}"
+            safe_containment = [e for e in containment_evals if e.feasible and e.safety.get("passed")]
+            evals.extend(safe_containment)
+            if safe_containment:
+                selected = min(
+                    safe_containment,
+                    key=lambda e: (e.residual_conflicts, max(0.0, e.weighted_delay_sec),
+                                   e.action.hold_sec or 0.0, e.title),
+                )
+                recommendation = self._containment_recommendation(conflict, selected, failure_metrics)
+            else:
+                recommendation = {
+                    "mode": "CONTAINMENT", "status": "NO_SAFE_RESOLUTION",
+                    "conflictId": conflict.id, "optionId": None,
+                    "rationale": "No safe containment command could be generated; interlocking and the section controller must protect the movement.",
+                    "expectedOutcome": "No automatic movement command is available.",
+                    "alternatives": [], "failureMetrics": failure_metrics,
+                }
+
         return OptimizationResult(
             conflict_id=conflict.id, options=evals, selected=selected,
-            objective_score=score, recommendation=self._recommendation(conflict, evals, selected))
+            objective_score=score, recommendation=recommendation,
+            failure_metrics=failure_metrics)
 
     def rank_actions(self, evals: list[OptionEval]) -> list[OptionEval]:
         return sorted(evals, key=lambda e: (not (e.feasible and e.conflict_resolved
@@ -87,7 +119,7 @@ class OptimizationEngine:
                                             option_cost(e, self.weights)))
 
     def _recommendation(self, conflict: Conflict, evals: list[OptionEval],
-                        selected: OptionEval | None) -> dict | None:
+                        selected: OptionEval | None, failure_metrics: dict) -> dict | None:
         if selected is None:
             return None
         res = resource_by_id[conflict.resource_id]
@@ -116,8 +148,66 @@ class OptimizationEngine:
         others = [e for e in evals
                   if e.id != selected.id and e.feasible and e.conflict_resolved and e.safety.get("passed")]
         return {
+            "mode": "RESOLUTION", "status": "READY",
             "conflictId": conflict.id, "optionId": selected.id, "rationale": rationale,
             "expectedOutcome": (f"{conflict.kind.replace('_', ' ').lower()} cleared; separation "
                                 f"restored to at least {required} s over {conflict.resource_id}."),
             "alternatives": [f"{o.title} — network {o.network_delay_sec / 60:.1f} min" for o in others],
+            "failureMetrics": failure_metrics,
+        }
+
+    def _containment_recommendation(self, conflict: Conflict, selected: OptionEval,
+                                    failure_metrics: dict) -> dict:
+        return {
+            "mode": "CONTAINMENT", "status": "NO_SAFE_RESOLUTION",
+            "conflictId": conflict.id, "optionId": selected.id,
+            "rationale": (f"Full resolution is unavailable at {conflict.resource_label}. "
+                          f"Recommended safe containment: {selected.title}. "
+                          "The movement remains protected, but residual network work requires controller/interlocking intervention."),
+            "expectedOutcome": "Movement protected without claiming the unavailable resource is restored.",
+            "alternatives": [], "failureMetrics": failure_metrics,
+        }
+
+    def _failure_metrics(self, state: AnalyticState, conflict: Conflict,
+                         evals: list[OptionEval]) -> dict:
+        failed_checks: dict[str, dict] = {}
+        infeasible_reasons = []
+        for ev in evals:
+            if ev.infeasible_reason:
+                infeasible_reasons.append({"candidate": ev.title, "reason": ev.infeasible_reason})
+            for check in ev.safety.get("checks", []):
+                if not check.get("passed"):
+                    failed_checks[check["id"]] = {
+                        "id": check["id"], "label": check["label"], "detail": check["detail"],
+                    }
+        deficit = max(0.0, conflict.required_separation_sec - conflict.separation_sec)
+        primary = "No safe candidate clears the conflict"
+        if conflict.resource_id in state.blocked_resources:
+            primary = f"Resource {conflict.resource_id} is withdrawn or blocked"
+        elif deficit > 0:
+            primary = f"Separation shortfall of {round(deficit)} seconds"
+        elif any("speed" in (v["label"] + v["detail"]).lower() for v in failed_checks.values()):
+            primary = "Required regulation is outside the permissible speed band"
+        elif state.unavailable_routes:
+            primary = "Required alternate route is unavailable"
+        return {
+            "candidateCount": len(evals),
+            "feasibleCandidateCount": sum(1 for e in evals if e.feasible),
+            "safetyPassingCandidateCount": sum(1 for e in evals if e.safety.get("passed")),
+            "conflictClearingCandidateCount": sum(1 for e in evals if e.conflict_resolved),
+            "actualSeparationSec": round(conflict.separation_sec, 1),
+            "requiredSeparationSec": round(conflict.required_separation_sec, 1),
+            "separationDeficitSec": round(deficit, 1),
+            "residualCriticalConflicts": max((e.residual_conflicts for e in evals), default=0),
+            "residualWarningConflicts": 0,
+            "failedSafetyChecks": list(failed_checks.values()),
+            "infeasibleReasons": infeasible_reasons,
+            "blockedResources": sorted(state.blocked_resources),
+            "unavailableRoutes": sorted(state.unavailable_routes),
+            "headwayMultiplier": round(state.headway_multiplier, 2),
+            "networkDelaySec": round(min((e.network_delay_sec for e in evals), default=0.0), 1),
+            "passengerDelaySec": round(min((e.passenger_delay_sec for e in evals), default=0.0), 1),
+            "freightDelaySec": round(min((e.freight_delay_sec for e in evals), default=0.0), 1),
+            "weightedDelaySec": round(min((e.weighted_delay_sec for e in evals), default=0.0), 1),
+            "primaryFailureReason": primary,
         }

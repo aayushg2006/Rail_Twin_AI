@@ -36,15 +36,22 @@ async def lifespan(app: FastAPI):
             if payload.get("events"):
                 orch._load_custom(payload)
     # Optimisation (CP-SAT) provider.
-    with contextlib.suppress(Exception):
+    try:
         from .optimize.provider import attach_optimizer
         attach_optimizer(orch)
+    except Exception as exc:
+        orch.model_status["optimizer"] = {"status": "UNAVAILABLE", "reason": str(exc)}
     # ML (XGBoost) provider — only attaches when trained artifacts are present.
-    with contextlib.suppress(Exception):
+    try:
         from .prediction.provider import attach_ml
         from .prediction.service import get_service
         if get_service().ready:
             attach_ml(orch)
+            orch.model_status["ml"] = {"status": "READY", "reason": "Trained XGBoost artifacts loaded"}
+        else:
+            orch.model_status["ml"] = {"status": "DETERMINISTIC_FALLBACK", "reason": "ML artifacts unavailable; deterministic projection remains authoritative"}
+    except Exception as exc:
+        orch.model_status["ml"] = {"status": "DETERMINISTIC_FALLBACK", "reason": str(exc)}
     await orch.start()
     try:
         yield

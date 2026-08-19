@@ -168,3 +168,74 @@ def test_counterfactual_baseline_never_below_current():
     bundle = orch._build_bundle()
     assert bundle["delayAvoidedSec"] >= 0
     assert bundle["baselineKpis"]["totalDelaySec"] >= bundle["kpis"]["totalDelaySec"]
+
+
+def test_worst_case_returns_safe_containment_with_failure_metrics():
+    """Unavailable PF6 must produce a protective hold response, not null."""
+    from app.optimize.provider import build_options
+
+    eng = SimulationEngine("WORST_CASE", seed=42)
+    eng.seek(70)
+    pred = predict(eng.analytic_state())
+    result = build_options(eng, pred)
+    pf6 = next(c for c in pred.conflicts if c.resource_id == "PF6")
+    rec = result["recommendationByConflict"][pf6.id]
+    option = next(o for o in result["optionsByConflict"][pf6.id] if o["id"] == rec["optionId"])
+
+    assert rec["mode"] == "CONTAINMENT"
+    assert rec["status"] == "NO_SAFE_RESOLUTION"
+    assert option["responseClass"] == "CONTAINMENT"
+    assert option["safety"]["passed"] is True
+    assert option["conflictResolved"] is False
+    assert "PF6" in rec["failureMetrics"]["blockedResources"]
+    assert rec["failureMetrics"]["primaryFailureReason"] == "Resource PF6 is withdrawn or blocked"
+    assert any(check["id"] == "PLT" for check in rec["failureMetrics"]["failedSafetyChecks"])
+
+
+def test_containment_can_be_accepted_after_live_revalidation():
+    from app.optimize.provider import build_options
+
+    orch = SimulationOrchestrator("WORST_CASE")
+    orch._set_clock_mode("DEMO")
+    orch.engine.seek(70)
+    orch.options_provider = build_options
+    orch._refresh_derived()
+    conflict = next(c for c in orch._cached_prediction.conflicts if c.resource_id == "PF6")
+    rec = orch._cached_options["recommendationByConflict"][conflict.id]
+    option = next(o for o in orch._cached_options["optionsByConflict"][conflict.id] if o["id"] == rec["optionId"])
+
+    orch._decide({
+        "conflictId": conflict.id,
+        "action": option["action"],
+        "outcome": "ACCEPTED",
+        "responseMode": "CONTAINMENT",
+    })
+
+    assert orch.engine.applied_actions[-1].train_id == option["action"]["trainId"]
+    assert orch._last_decision_status["status"] == "ACCEPTED"
+
+
+def test_no_conflict_returns_monitoring_response():
+    from app.optimize.provider import build_options
+
+    eng = SimulationEngine("FREIGHT_DELAY", seed=42)
+    pred = predict(eng.analytic_state())
+    assert not pred.conflicts
+    result = build_options(eng, pred)
+
+    assert result["recommendation"]["mode"] == "MONITORING"
+    assert result["recommendation"]["status"] == "NO_CONFLICT"
+    assert result["globalPlan"]["status"] == "MONITORING"
+
+
+def test_every_predefined_scenario_has_a_response_state():
+    from app.network.data import data_pack
+    from app.optimize.provider import build_options
+
+    for scenario in [item["id"] for item in data_pack["scenarios"]]:
+        eng = SimulationEngine(scenario, seed=42)
+        eng.seek(70)
+        pred = predict(eng.analytic_state())
+        result = build_options(eng, pred)
+        assert result["recommendation"] is not None, scenario
+        assert result["recommendation"]["mode"] in {"RESOLUTION", "CONTAINMENT", "MONITORING"}

@@ -4,7 +4,7 @@ import { signedMin } from "@/twin/format";
 import { Btn, Panel, PanelHead, Tag } from "./primitives";
 
 export function OptionsPanel({ className }: { className?: string }) {
-  const { options, previewOption, setPreviewOptionId, recommendation, selectedConflict } = useTwin();
+  const { options, previewOption, setPreviewOptionId, recommendation, selectedConflict, acknowledgedDecision } = useTwin();
 
   return (
     <Panel className={className}>
@@ -22,7 +22,9 @@ export function OptionsPanel({ className }: { className?: string }) {
       />
       {options.length === 0 ? (
         <p className="px-3 py-4 text-[12px] text-muted-foreground">
-          No option set — select a predicted conflict first.
+          {acknowledgedDecision && !selectedConflict
+            ? "Action accepted — no What-if preview is active. Select a predicted conflict to evaluate it again."
+            : "No option set — select a predicted conflict first."}
         </p>
       ) : (
         <div className="min-h-0 overflow-auto">
@@ -62,9 +64,12 @@ export function OptionsPanel({ className }: { className?: string }) {
                       {isRec ? <span className="ml-1 text-ok">★</span> : null}
                     </td>
                     <td className="px-2 py-1 text-[11.5px]">
+                      {o.responseClass === "CONTAINMENT" ? <Tag tone="warning">Containment</Tag> : null}
                       {o.title}
-                      {!o.feasible ? (
-                        <span className="block text-[10px] text-faint">{o.infeasibleReason}</span>
+                      {!o.feasible || !o.safety.passed ? (
+                        <span className="block text-[10px] text-faint">
+                          {o.infeasibleReason ?? o.safety.checks.find((check) => !check.passed)?.detail ?? "Safety validation failed"}
+                        </span>
                       ) : null}
                     </td>
                     <td className="px-2 py-1">
@@ -100,7 +105,7 @@ export function OptionsPanel({ className }: { className?: string }) {
 }
 
 export function SafetyPanel({ className }: { className?: string }) {
-  const { previewOption } = useTwin();
+  const { previewOption, recommendation, modelStatus, acknowledgedDecision } = useTwin();
   return (
     <Panel className={className}>
       <PanelHead
@@ -110,9 +115,21 @@ export function SafetyPanel({ className }: { className?: string }) {
       />
       <div className="min-h-0 overflow-y-auto px-3 py-2">
         {!previewOption ? (
-          <p className="text-[12px] text-muted-foreground">
-            Select an option to run interlocking-style validation checks.
-          </p>
+          <div className="text-[12px] text-muted-foreground">
+            <p>
+              {acknowledgedDecision
+                ? "The accepted action is live; no What-if option is currently previewed."
+                : recommendation?.mode === "MONITORING"
+                  ? "No intervention is required in the current horizon."
+                  : "Select an option to run interlocking-style validation checks."}
+            </p>
+            <p className="mt-2 text-[10px] text-faint">Optimizer: {modelStatus.optimizer.status} · ML: {modelStatus.ml.status}</p>
+            {recommendation?.failureMetrics?.failedSafetyChecks.length ? (
+              <ul className="mt-2 space-y-1 text-[10.5px] text-critical">
+                {recommendation.failureMetrics.failedSafetyChecks.map((check) => <li key={check.id}>{check.label}: {check.detail}</li>)}
+              </ul>
+            ) : null}
+          </div>
         ) : (
           previewOption.safety.checks.map((c) => (
             <div key={c.id} className="flex items-start gap-2 border-b border-border/60 py-1.5">

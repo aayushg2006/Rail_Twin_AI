@@ -52,6 +52,10 @@ class SimulationOrchestrator:
         self.decision_hook: Callable[[dict], None] | None = None
         self.options_provider: Callable[[SimulationEngine, Any], dict] | None = None
         self.ml_provider: Callable[[SimulationEngine, Any], dict] | None = None
+        self.model_status: dict = {
+            "optimizer": {"status": "UNAVAILABLE", "reason": "Optimizer provider is still initializing"},
+            "ml": {"status": "DETERMINISTIC_FALLBACK", "reason": "Trained ML artifacts are not loaded"},
+        }
         self._baseline_kpis: dict | None = None
         self._suggestion_revision = 0
         self._suggestion_generated_at = 0.0
@@ -168,6 +172,7 @@ class SimulationOrchestrator:
             "suggestionRevision": self._suggestion_revision,
             "suggestionGeneratedAt": self._suggestion_generated_at,
             "lastDecisionStatus": self._last_decision_status,
+            "modelStatus": self.model_status,
         }
         bundle.update(self._cached_options)
         return bundle
@@ -348,7 +353,8 @@ class SimulationOrchestrator:
                      or c.train_b in {current.train_a, current.train_b, action.train_id})
                 for c in projected.conflicts
             )
-            safety = validate(action, after, current, not residual)
+            mode = "CONTAINMENT" if msg.get("responseMode") == "CONTAINMENT" else "RESOLUTION"
+            safety = validate(action, after, current, not residual, mode)
             if not safety.get("passed"):
                 self._last_decision_status = {"status": "REJECTED", "reason": "Safety validation failed"}
                 if self.decision_hook:
