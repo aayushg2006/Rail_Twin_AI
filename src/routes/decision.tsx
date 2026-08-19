@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { TwinMap } from "@/components/twin/TwinMap";
-import { OptionsPanel, SafetyPanel } from "@/components/ops/OptionsPanel";
-import { DecisionPanel } from "@/components/ops/DecisionPanel";
 import { Timeline } from "@/components/ops/Timeline";
 import { KpiBar } from "@/components/ops/KpiBar";
+import { WhatIfModal } from "@/components/ops/WhatIfModal";
+import { DecisionStatusPanel } from "@/components/ops/DecisionStatusPanel";
 
 export const Route = createFileRoute("/decision")({
   head: () => ({
@@ -29,16 +29,13 @@ function DecisionScreen() {
     <main className="flex min-h-0 flex-1 flex-col overflow-y-auto lg:overflow-hidden">
       <h1 className="sr-only">What-if simulation and decision</h1>
       <Timeline />
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-px bg-border lg:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="grid min-h-0 grid-rows-[minmax(300px,1fr)_auto] gap-px bg-border">
-          <div className="bg-map">
-            <TwinMap />
-          </div>
-          <OptionsPanel className="max-h-[38vh]" />
+      <div className="grid min-h-0 flex-1 grid-cols-1 gap-px bg-border lg:grid-cols-[minmax(0,1fr)_clamp(300px,24vw,420px)]">
+        <div className="relative min-h-0 bg-map">
+          <TwinMap />
+          <WhatIfModal />
         </div>
-        <div className="grid min-h-0 gap-px bg-border max-lg:min-h-[70vh] lg:grid-rows-[minmax(0,1fr)_auto]">
-          <DecisionPanel />
-          <SafetyPanel className="max-h-[38vh]" />
+        <div className="min-h-0 max-h-full overflow-y-scroll overscroll-contain bg-border max-lg:max-h-[42vh]">
+          <DecisionStatusPanel />
         </div>
       </div>
       <KpiBar />

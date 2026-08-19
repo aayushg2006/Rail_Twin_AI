@@ -33,8 +33,7 @@ class ManagedResource:
         return self.base_headway * self.headway_multiplier
 
     def gate_wait(self, now: float) -> float:
-        """Seconds a train that has just acquired the resource must still wait
-        for headway / block clearance before it may enter."""
+        """Seconds a train must wait for interlocking headway/clearance."""
         if self.blocked:
             return BLOCKED_FREE_AT
         return max(0.0, self.free_at - now)

@@ -261,7 +261,11 @@ class SimulationEngine:
         # mutual exclusion (the brief pass-through), NOT the scheduling headway —
         # that upcoming contention is surfaced to the controller as a predicted
         # conflict to resolve. Blocks keep the full headway gate (real waits).
-        gate = 0.0 if (res.kind == "JUNCTION" and not mr.blocked) else mr.gate_wait(env.now)
+        # Interlocking safety is authoritative even when the controller rejects
+        # a recommendation. Every shared resource, including junctions, must
+        # enforce its headway gate so unresolved movements cannot pass too
+        # close together.
+        gate = mr.gate_wait(env.now)
         if gate > 0:
             rt.status = TrainStatus.WAITING
             rt.wait_end_t = env.now + gate

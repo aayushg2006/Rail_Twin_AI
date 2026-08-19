@@ -111,6 +111,56 @@ def test_human_in_loop_accept_modify_reject(monkeypatch):
     assert [d["outcome"] for d in logged] == ["REJECTED", "ACCEPTED", "REJECTED"]
 
 
+def test_rejected_decision_keeps_interlocking_headway_safe():
+    """Rejecting an option leaves protection to the interlocking; unresolved
+    movements may wait, but must never violate resource headway."""
+    orch = SimulationOrchestrator("BASE")
+    orch._set_clock_mode("DEMO")
+    orch.engine.seek(70)
+    orch._refresh_derived()
+    conflict = next(c for c in orch._cached_prediction.conflicts if c.resource_id == "JB")
+    before = len(orch.engine.applied_actions)
+
+    orch._decide({
+        "conflictId": conflict.id,
+        "action": {"kind": "HOLD", "trainId": conflict.train_a, "holdSec": 0},
+        "outcome": "REJECTED",
+        "note": "Rejected by controller",
+    })
+    assert len(orch.engine.applied_actions) == before
+
+    orch.engine.advance(240)
+    for resource in orch.engine.resources.values():
+        records = sorted(resource.occupancy, key=lambda item: item.enter)
+        for previous, current in zip(records, records[1:]):
+            if previous.exit is not None:
+                assert current.enter + 1e-6 >= previous.exit + resource.headway
+
+
+def test_every_scenario_has_only_safe_recommendations():
+    """Every predefined scenario must expose safe recommendations or an
+    explicit no-safe-plan response."""
+    from app.network.data import data_pack
+    from app.optimize.provider import build_options
+
+    for scenario in [item["id"] for item in data_pack["scenarios"]]:
+        orch = SimulationOrchestrator(scenario)
+        orch._set_clock_mode("DEMO")
+        orch.engine.seek(70)
+        orch._refresh_derived()
+        result = build_options(orch.engine, orch._cached_prediction)
+        for conflict in orch._cached_prediction.conflicts:
+            recommendation = result["recommendationByConflict"].get(conflict.id)
+            if not recommendation or not recommendation.get("optionId"):
+                continue
+            option = next(
+                item for item in result["optionsByConflict"][conflict.id]
+                if item["id"] == recommendation["optionId"]
+            )
+            assert option["feasible"] is True, (scenario, conflict.id)
+            assert option["safety"]["passed"] is True, (scenario, conflict.id)
+
+
 def test_options_are_generated_for_every_predicted_conflict():
     orch = SimulationOrchestrator("BASE")
     orch._set_clock_mode("DEMO")

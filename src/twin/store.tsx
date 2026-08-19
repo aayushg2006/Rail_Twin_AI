@@ -74,6 +74,11 @@ export interface AcknowledgedDecision {
   outcome: DecisionOutcome;
 }
 
+function conflictKey(conflict: Conflict): string {
+  const trains = [conflict.trainA, conflict.trainB].filter(Boolean).sort().join("|");
+  return [conflict.resourceId, trains].join("|");
+}
+
 interface TwinContextValue {
   /** Authoritative live state. */
   sim: SimState;
@@ -117,6 +122,8 @@ interface TwinContextValue {
   mlByTrain: Record<string, MLPrediction[]>;
   /** The last controller response whose What-if preview was closed. */
   acknowledgedDecision: AcknowledgedDecision | null;
+  /** Whether the direct What-if workflow is open. */
+  whatIfOpen: boolean;
   modelStatus: {
     optimizer: { status: string; reason: string };
     ml: { status: string; reason: string };
@@ -133,6 +140,8 @@ interface TwinContextValue {
   select: (sel: Selection) => void;
   setFocusMode: (v: boolean) => void;
   setPreviewOptionId: (id: string | null) => void;
+  openWhatIf: (id?: string) => void;
+  closeWhatIf: () => void;
   toggleLayer: (k: keyof LayerFlags) => void;
   loadScenario: (id: ScenarioId) => void;
   loadCustomScenario: (scenario: CustomScenario) => void;
@@ -164,6 +173,9 @@ export function TwinProvider({ children }: { children: ReactNode }) {
   const [selectedTrainId, setSelectedTrainId] = useState<string | null>(null);
   const [selectedConflictId, setSelectedConflictId] = useState<string | null>(null);
   const [acknowledgedDecision, setAcknowledgedDecision] = useState<AcknowledgedDecision | null>(null);
+  const [whatIfOpen, setWhatIfOpen] = useState(false);
+  const [handledConflictIds, setHandledConflictIds] = useState<Set<string>>(() => new Set());
+  const [pendingNextConflictId, setPendingNextConflictId] = useState<string | null>(null);
   const [selection, setSelection] = useState<Selection>(null);
   const [focusMode, setFocusMode] = useState(false);
   const [previewOptionId, setPreviewOptionId] = useState<string | null>(null);
@@ -231,23 +243,22 @@ export function TwinProvider({ children }: { children: ReactNode }) {
   }, [sim.scenario]);
 
   const selectedConflict = useMemo(() => {
-    const visibleConflicts = acknowledgedDecision
-      ? prediction.conflicts.filter((c) => c.id !== acknowledgedDecision.conflictId)
-      : prediction.conflicts;
-    if (visibleConflicts.length === 0) return null;
-    return (
-      visibleConflicts.find((c) => c.id === selectedConflictId) ?? visibleConflicts[0]!
-    );
-  }, [prediction, selectedConflictId, acknowledgedDecision]);
+    return prediction.conflicts.find((c) => c.id === selectedConflictId) ?? null;
+  }, [prediction, selectedConflictId]);
 
-  // Once the accepted action clears its original conflict from the live
-  // prediction, the acknowledgement has served its purpose. If it remains,
-  // keep it hidden until the controller explicitly selects it again.
+  // A decision closes the current popup. Once the next live frame arrives,
+  // open one genuinely new conflict, never whichever conflict happens to be
+  // first in a refreshed prediction.
   useEffect(() => {
-    if (acknowledgedDecision && !prediction.conflicts.some((c) => c.id === acknowledgedDecision.conflictId)) {
-      setAcknowledgedDecision(null);
+    if (!pendingNextConflictId) return;
+    const next = prediction.conflicts.find((c) => c.id === pendingNextConflictId && !handledConflictIds.has(conflictKey(c)))
+      ?? prediction.conflicts.find((c) => !handledConflictIds.has(conflictKey(c)));
+    setPendingNextConflictId(null);
+    if (next) {
+      setSelectedConflictId(next.id);
+      setWhatIfOpen(true);
     }
-  }, [prediction, acknowledgedDecision]);
+  }, [prediction, pendingNextConflictId, handledConflictIds]);
 
   const optionsKey = `${selectedConflict?.id ?? ""}|${Math.floor(sim.simTimeSec / 10)}|${sim.appliedActions.length}`;
   const localOptions = useMemo(
@@ -288,9 +299,14 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     const earliest = [...prediction.conflicts].sort((a, b) => a.etaSec - b.etaSec)[0];
     if (!earliest) {
       setSelectedConflictId(null);
+      setWhatIfOpen(false);
       return;
     }
+    setHandledConflictIds(new Set());
+    setAcknowledgedDecision(null);
+    setPendingNextConflictId(null);
     setSelectedConflictId(earliest.id);
+    setWhatIfOpen(true);
     const focusAt = sim.simTimeSec + Math.max(0, earliest.etaSec - 45);
     if (focusAt > sim.simTimeSec + 1) {
       setPlayingState(false);
@@ -344,8 +360,13 @@ export function TwinProvider({ children }: { children: ReactNode }) {
         action,
         outcome,
         networkDelaySec: option.networkDelaySec,
+        delayAvoidedSec: outcome === "REJECTED"
+          ? -Math.abs(option.networkDelaySec)
+          : Math.max(0, -option.networkDelaySec),
         note,
         kpiBefore: kpis,
+        description: recommendation?.rationale ?? option.title,
+        expectedOutcome: recommendation?.expectedOutcome,
       };
       setDecisions((d) => [record, ...d]);
       // Prefer the backend decision path (safety re-validation + audit log);
@@ -355,6 +376,12 @@ export function TwinProvider({ children }: { children: ReactNode }) {
       } else if (outcome !== "REJECTED") {
         source.applyAction(action);
       }
+      const next = prediction.conflicts.find((c) => c.id !== conflict.id && !handledConflictIds.has(conflictKey(c)));
+      setHandledConflictIds((ids) => {
+        const nextIds = new Set(ids);
+        nextIds.add(conflictKey(conflict));
+        return nextIds;
+      });
       // Close the What-if decision view for every controller response. A
       // rejection must not leave the same recommendation/actions open, and a
       // backend safety rejection of a modified action is still a completed
@@ -364,9 +391,34 @@ export function TwinProvider({ children }: { children: ReactNode }) {
       setSelectedConflictId(null);
       setSelection(null);
       setPreviewOptionId(null);
+      setWhatIfOpen(false);
+      setPendingNextConflictId(next?.id ?? null);
     },
-    [selectedConflict, sim, kpis, source, bundle],
+    [selectedConflict, sim, kpis, recommendation, source, bundle, prediction, handledConflictIds],
   );
+
+  const openWhatIf = useCallback((id?: string) => {
+    const targetId = id ?? selectedConflictId ?? prediction.conflicts[0]?.id;
+    if (!targetId || !prediction.conflicts.some((c) => c.id === targetId)) return;
+    setHandledConflictIds((ids) => {
+      const next = new Set(ids);
+      const target = prediction.conflicts.find((c) => c.id === targetId);
+      if (target) next.delete(conflictKey(target));
+      return next;
+    });
+    setAcknowledgedDecision(null);
+    setSelectedConflictId(targetId);
+    setPreviewOptionId(null);
+    setWhatIfOpen(true);
+  }, [prediction, selectedConflictId]);
+
+  const closeWhatIf = useCallback(() => {
+    setWhatIfOpen(false);
+    setSelectedConflictId(null);
+    setSelection(null);
+    setPreviewOptionId(null);
+    setPendingNextConflictId(null);
+  }, []);
 
 
   const stepForward = useCallback(
@@ -389,6 +441,9 @@ export function TwinProvider({ children }: { children: ReactNode }) {
       source.loadScenario(id);
       setSelectedConflictId(null);
       setAcknowledgedDecision(null);
+      setHandledConflictIds(new Set());
+      setPendingNextConflictId(null);
+      setWhatIfOpen(false);
       setSelectedTrainId(null);
       setSelection(null);
       setFocusMode(false);
@@ -409,6 +464,9 @@ export function TwinProvider({ children }: { children: ReactNode }) {
       source.loadCustomScenario?.(scenario);
       setSelectedConflictId(null);
       setAcknowledgedDecision(null);
+      setHandledConflictIds(new Set());
+      setPendingNextConflictId(null);
+      setWhatIfOpen(false);
       setPreviewOptionId(null);
       setHorizonOffset(0);
       setBaselineKpis(null);
@@ -427,19 +485,20 @@ export function TwinProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const selectConflict = useCallback((id: string | null) => {
-    if (id) setAcknowledgedDecision(null);
+    if (id) openWhatIf(id);
+    else closeWhatIf();
     setSelectedConflictId(id);
     setSelection(id ? { kind: "conflict", id } : null);
     setPreviewOptionId(null);
-  }, []);
+  }, [openWhatIf, closeWhatIf]);
 
   const select = useCallback((sel: Selection) => {
     setSelection(sel);
-    if (sel?.kind === "conflict") setAcknowledgedDecision(null);
+    if (sel?.kind === "conflict") openWhatIf(sel.id);
     if (sel?.kind === "train") setSelectedTrainId(sel.id);
     else if (sel?.kind === "conflict") setSelectedConflictId(sel.id);
     else if (!sel) setSelectedTrainId(null);
-  }, []);
+  }, [openWhatIf]);
 
   const value: TwinContextValue = {
     sim,
@@ -471,6 +530,7 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     mlByConflict: bundle?.mlByConflict ?? {},
     mlByTrain: bundle?.mlByTrain ?? {},
     acknowledgedDecision,
+    whatIfOpen,
     modelStatus: bundle?.modelStatus ?? {
       optimizer: { status: "READY", reason: "In-browser deterministic optimizer" },
       ml: { status: "DETERMINISTIC_FALLBACK", reason: "In-browser deterministic projection" },
@@ -487,6 +547,8 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     select,
     setFocusMode,
     setPreviewOptionId,
+    openWhatIf,
+    closeWhatIf,
     toggleLayer,
     loadScenario,
     loadCustomScenario,

@@ -224,8 +224,7 @@ class SimulationOrchestrator:
                 self.horizon = int(msg.get("horizonSec", self.horizon))
                 self._refresh_derived()
             elif cmd == "apply_action":
-                self.engine.apply_action(_action(msg.get("action", {})))
-                self._refresh_derived()
+                self._apply_external_action(_action(msg.get("action", {})))
             elif cmd == "inject_event":
                 self.engine.inject_event(_event(msg.get("event", {})))
                 self._refresh_derived()
@@ -237,6 +236,29 @@ class SimulationOrchestrator:
                 self._load(self.engine.scenario_id)
             elif cmd == "decide":
                 self._decide(msg)
+
+    def _apply_external_action(self, action: AppliedAction) -> None:
+        """Apply only an action that passes the controller safety firewall."""
+        allowed = {"SPEED_REGULATION", "HOLD", "ALTERNATE_ROUTE", "PLATFORM_REASSIGNMENT"}
+        related = [c for c in (self._cached_prediction.conflicts if self._cached_prediction else [])
+                   if action.train_id in {c.train_a, c.train_b}]
+        if action.kind not in allowed or not related:
+            self._last_decision_status = {"status": "REJECTED", "reason": "Action failed safety pre-validation"}
+            return
+        after = apply_action(self.engine.analytic_state(), action)
+        projected = predict(after, self.horizon)
+        for current in related:
+            residual = any(
+                c.severity == "CRITICAL" and c.resource_id == current.resource_id
+                and (c.train_a in {current.train_a, current.train_b, action.train_id}
+                     or c.train_b in {current.train_a, current.train_b, action.train_id})
+                for c in projected.conflicts
+            )
+            if not validate(action, after, current, not residual, "RESOLUTION").get("passed"):
+                self._last_decision_status = {"status": "REJECTED", "reason": "Action failed safety validation"}
+                return
+        self.engine.apply_action(action)
+        self._refresh_derived()
 
     def _load(self, scenario_id: str) -> None:
         epoch = settings.demo_epoch_start_ms if self.clock_mode == "DEMO" else int(time.time() * 1000)
@@ -345,6 +367,9 @@ class SimulationOrchestrator:
             self._last_decision_status = {"status": "REJECTED", "reason": "Conflict is no longer active"}
             return
         if current is not None and outcome != "REJECTED":
+            if action.kind not in {"SPEED_REGULATION", "HOLD", "ALTERNATE_ROUTE", "PLATFORM_REASSIGNMENT"}:
+                self._last_decision_status = {"status": "REJECTED", "reason": "Unsupported action kind"}
+                return
             after = apply_action(self.engine.analytic_state(), action)
             projected = predict(after, self.horizon)
             residual = any(

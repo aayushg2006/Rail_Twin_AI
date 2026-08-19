@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { forwardRef, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 export type Tone = "neutral" | "critical" | "warning" | "ok" | "selected" | "freight" | "dim";
@@ -102,15 +102,7 @@ export function Tag({ children, tone = "neutral" }: { children: ReactNode; tone?
   );
 }
 
-export function Btn({
-  children,
-  onClick,
-  variant = "default",
-  active,
-  disabled,
-  className,
-  title,
-}: {
+export const Btn = forwardRef<HTMLButtonElement, {
   children: ReactNode;
   onClick?: () => void;
   variant?: "default" | "primary" | "danger" | "warn" | "quiet";
@@ -118,7 +110,7 @@ export function Btn({
   disabled?: boolean;
   className?: string | undefined;
   title?: string | undefined;
-}) {
+}>(({ children, onClick, variant = "default", active, disabled, className, title }, ref) => {
   const styles: Record<string, string> = {
     default: "border-border-strong bg-panel-raised text-foreground hover:border-selected/70",
     primary: "border-ok/70 bg-ok/10 text-ok hover:bg-ok/20",
@@ -128,6 +120,7 @@ export function Btn({
   };
   return (
     <button
+      ref={ref}
       type="button"
       title={title}
       disabled={disabled}
@@ -143,7 +136,8 @@ export function Btn({
       {children}
     </button>
   );
-}
+});
+Btn.displayName = "Btn";
 
 export function toneText(tone: Tone): string {
   switch (tone) {

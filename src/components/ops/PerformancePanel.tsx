@@ -69,7 +69,7 @@ export function DecisionLogTable({ className }: { className?: string }) {
           <table className="w-full border-collapse text-left">
             <thead className="sticky top-0 bg-shell">
               <tr className="label-xs">
-                {["Time", "Conflict", "Option", "Action", "Outcome", "Network", "Note"].map((h) => (
+                {["Time", "Conflict", "Option", "Action", "Outcome", "Network", "Delay avoided", "Note"].map((h) => (
                   <th key={h} className="border-b border-border px-2 py-1 font-medium">
                     {h}
                   </th>
@@ -100,6 +100,9 @@ export function DecisionLogTable({ className }: { className?: string }) {
                   </td>
                   <td className="num px-2 py-1 text-[11px]">
                     {(d.networkDelaySec / 60).toFixed(1)}′
+                  </td>
+                  <td className={`num px-2 py-1 text-[11px] ${d.delayAvoidedSec < 0 ? "text-critical" : d.delayAvoidedSec > 0 ? "text-ok" : "text-faint"}`}>
+                    {(d.delayAvoidedSec / 60).toFixed(1)}′
                   </td>
                   <td className="px-2 py-1 text-[11px] text-muted-foreground">{d.note || "—"}</td>
                 </tr>

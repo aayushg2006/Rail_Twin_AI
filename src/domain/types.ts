@@ -370,8 +370,13 @@ export interface DecisionRecord {
   action: ResolutionAction;
   outcome: DecisionOutcome;
   networkDelaySec: number;
+  /** Signed per-decision delay benefit in seconds. */
+  delayAvoidedSec: number;
   note: string;
   kpiBefore: KPISet;
+  /** Human-readable explanation captured with the controller decision. */
+  description?: string;
+  expectedOutcome?: string | undefined;
 }
 
 export type ScenarioId =

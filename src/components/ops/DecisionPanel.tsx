@@ -279,7 +279,7 @@ function ModelStatus({ modelStatus }: { modelStatus: { optimizer: { status: stri
   );
 }
 
-function FailureMetricsView({ metrics }: { metrics?: FailureMetrics }) {
+function FailureMetricsView({ metrics }: { metrics: FailureMetrics | undefined }) {
   if (!metrics) return null;
   return (
     <div className="mt-3 border-t border-border/60 pt-2 text-[10.5px]">
