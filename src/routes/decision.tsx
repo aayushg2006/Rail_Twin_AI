@@ -1,9 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { TwinMap } from "@/components/twin/TwinMap";
 import { Timeline } from "@/components/ops/Timeline";
-import { KpiBar } from "@/components/ops/KpiBar";
 import { WhatIfModal } from "@/components/ops/WhatIfModal";
-import { DecisionStatusPanel } from "@/components/ops/DecisionStatusPanel";
+import { ConflictPanel } from "@/components/ops/ConflictPanel";
 
 export const Route = createFileRoute("/decision")({
   head: () => ({
@@ -35,10 +34,9 @@ function DecisionScreen() {
           <WhatIfModal />
         </div>
         <div className="min-h-0 max-h-full overflow-y-scroll overscroll-contain bg-border max-lg:max-h-[42vh]">
-          <DecisionStatusPanel />
+          <ConflictPanel />
         </div>
       </div>
-      <KpiBar />
     </main>
   );
 }

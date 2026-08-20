@@ -1,71 +1,99 @@
 import { useTwin } from "@/twin/store";
-import { fleetById } from "@/twin/scenario";
-import { conflictKindLabel, mmss, trainTypeLabel } from "@/twin/format";
-import { occupiedPlatforms, projectFinish, routeFor } from "@/twin/engine";
-import { platformById, resourceById, tracks } from "@/twin/topology";
+import { countdown, lateness, minutes } from "@/twin/format";
+import { CLASS_LABEL } from "@/twin/projection";
 import { Panel, PanelHead, Row, Tag } from "./primitives";
 
+/** Contextual detail for whatever is selected on the schematic. */
 export function Inspector({ className }: { className?: string }) {
-  const { selection, view, prediction, select } = useTwin();
+  const { selection, bundle, conflicts, select, network } = useTwin();
 
-  if (!selection) {
+  if (!selection || !bundle) {
     return (
       <Panel className={className}>
         <PanelHead title="Inspector" meta="nothing selected" tone="dim" />
         <p className="px-3 py-4 text-[12px] text-muted-foreground">
-          Select a train, platform, track or conflict on the schematic to inspect its state.
+          Select a train, a platform or a conflict on the schematic.
         </p>
       </Panel>
     );
   }
 
   if (selection.kind === "train") {
-    const ts = view.trains[selection.id];
-    const train = fleetById[selection.id];
-    if (!ts || !train) return null;
-    const route = routeFor(view, selection.id);
-    const finish = projectFinish(view, selection.id);
-    const conflicts = prediction.conflicts.filter(
-      (c) => c.trainA === selection.id || c.trainB === selection.id,
-    );
-    const nextStop = route.stops[ts.nextStopIndex];
+    const t = bundle.simState.trains[selection.id];
+    if (!t) return null;
+    const mine = conflicts.filter((c) => c.trainA === t.trainId || c.trainB === t.trainId);
+    const observation = bundle.liveData.observations.find((o) => o.number === t.number);
+    const delays = t.delayBreakdown;
+    const causes = ([
+      ["Late entering the section", delays.entry],
+      ["Waiting at a signal", delays.block_wait + delays.junction_wait + delays.headway_wait],
+      ["Waiting for a platform", delays.platform_wait],
+      ["Extended station stop", delays.dwell],
+      ["Held by the controller", delays.hold],
+      ["Running under regulation", delays.regulation],
+    ] as [string, number][]).filter(([, v]) => v > 1);
+
     return (
       <Panel className={className}>
         <PanelHead
-          title={`Train ${train.number}`}
-          meta={train.name}
-          tone={conflicts.length ? "critical" : "neutral"}
-          right={<Tag tone={train.type === "FREIGHT" ? "freight" : "neutral"}>{trainTypeLabel[train.type]}</Tag>}
+          title={`Train ${t.number}`}
+          meta={t.name}
+          tone={mine.length ? "critical" : "neutral"}
+          right={
+            <Tag tone={t.category === "FREIGHT" ? "freight" : "neutral"}>
+              {CLASS_LABEL[t.serviceClass] ?? t.category}
+            </Tag>
+          }
         />
         <div className="min-h-0 overflow-y-auto px-3 pb-3">
-          <Row label="Route" value={route.label} />
-          <Row label="Origin → destination" value={`${train.origin} → ${train.destination}`} />
-          <Row label="State" value={ts.state} />
-          <Row label="Speed / nominal" value={`${Math.round(ts.speedKmh)} / ${Math.round(ts.nominalSpeedKmh)} km/h`} />
+          <Row label="Working" value={`${t.origin} → ${t.destination}`} />
+          <Row label="Through the junction" value={`${t.arrivalCorridor} → ${t.departureCorridor}`} />
+          <Row label="Platform" value={t.platformId ?? "runs through"} />
+          <Row label="Speed" value={`${Math.round(t.speedKmh)} of ${Math.round(t.lineSpeedKmh)} km/h`} />
           <Row
-            label="Delay"
-            value={`+${mmss(ts.delaySec)}`}
-            tone={ts.delaySec > 240 ? "critical" : ts.delaySec > 60 ? "warning" : "ok"}
+            label="Running"
+            value={lateness(t.latenessSec)}
+            tone={t.latenessSec > 300 ? "critical" : t.latenessSec > 60 ? "warning" : "ok"}
           />
-          <Row label="Priority" value={`P${train.priority}`} />
-          <Row
-            label="Next stop"
-            value={nextStop ? `${platformById[nextStop.platformId]?.label ?? nextStop.platformId} · dwell ${nextStop.dwellSec}s` : "None remaining"}
-          />
-          <Row label="Hold remaining" value={ts.holdRemainingSec > 0 ? mmss(ts.holdRemainingSec) : "—"} />
-          <Row label="Clears station area" value={finish === null ? "NO DATA" : `T+${mmss(finish)}`} />
-          <div className="label-xs mt-3 mb-1">Involved conflicts</div>
-          {conflicts.length === 0 ? (
-            <p className="text-[11.5px] text-muted-foreground">None within the horizon.</p>
+          <Row label="On board" value={t.typicalLoad ? `${t.typicalLoad.toLocaleString()} passengers` : "goods"} />
+          <Row label="State" value={t.state} />
+          {t.holdRemainingSec > 0 && (
+            <Row label="Hold remaining" value={`${Math.round(t.holdRemainingSec)}s`} tone="critical" />
+          )}
+
+          {causes.length > 0 && (
+            <>
+              <div className="label-xs mt-3 mb-1">Where the time went</div>
+              {causes.map(([label, v]) => (
+                <Row key={label} label={label} value={minutes(v)} />
+              ))}
+            </>
+          )}
+
+          {observation && (
+            <p className="mt-3 border-t border-border/60 pt-2 text-[10.5px] text-faint">
+              Last live observation {Math.round(observation.latenessSec / 60)} min late at{" "}
+              {observation.lastStation || "an unreported point"} ({observation.source}).
+            </p>
+          )}
+          {t.provenance === "synthetic" && (
+            <p className="mt-2 text-[10.5px] text-faint">
+              Goods path — generated, not observed. No public live feed exists for freight.
+            </p>
+          )}
+
+          <div className="label-xs mt-3 mb-1">Conflicts involving this train</div>
+          {mine.length === 0 ? (
+            <p className="text-[11.5px] text-muted-foreground">None in the next 15 minutes.</p>
           ) : (
-            conflicts.map((c) => (
+            mine.map((c) => (
               <button
                 key={c.id}
                 type="button"
                 onClick={() => select({ kind: "conflict", id: c.id })}
-                className="num block w-full border-b border-border/60 py-1 text-left text-[11px] hover:text-selected"
+                className="block w-full border-b border-border/60 py-1 text-left text-[11.5px] hover:text-selected"
               >
-                T+{mmss(c.etaSec)} · {conflictKindLabel(c.kind)} · {c.resourceLabel}
+                {c.resourceLabel} · {countdown(c.etaSec)}
               </button>
             ))
           )}
@@ -75,51 +103,42 @@ export function Inspector({ className }: { className?: string }) {
   }
 
   if (selection.kind === "platform") {
-    const pf = platformById[selection.id];
+    const pf = network?.platforms.find((p) => p.id === selection.id);
     if (!pf) return null;
-    const occ = occupiedPlatforms(view)[pf.id];
-    const train = occ ? fleetById[occ] : undefined;
-    const res = resourceById[pf.id];
+    const blocked = bundle.simState.blockedResources.includes(pf.id);
+    const occupant = Object.values(bundle.simState.trains).find(
+      (t) => t.admitted && !t.finished && t.platformId === pf.id && t.state === "DWELL",
+    );
+    const res = network?.resources.find((r) => r.id === pf.id);
     return (
       <Panel className={className}>
-        <PanelHead title={pf.label} meta={pf.usage} tone={occ ? "warning" : "ok"} />
+        <PanelHead
+          title={pf.label}
+          meta={pf.usage}
+          tone={blocked ? "critical" : occupant ? "warning" : "ok"}
+        />
         <div className="px-3 pb-3">
           <Row label="Side" value={pf.side} />
+          <Row label="Length" value={`${pf.lengthM.toFixed(0)} m`} />
           <Row label="Serves" value={pf.serves.join(", ")} />
-          <Row label="Occupancy" value={train ? `${train.number} ${train.name}` : "CLEAR"} tone={occ ? "warning" : "ok"} />
-          <Row label="Headway" value={res ? `${res.headwaySec}s` : "NO DATA"} />
-          <Row label="Capacity" value={res ? String(res.capacity) : "1"} />
+          <Row
+            label="Now"
+            value={blocked ? "OUT OF USE" : occupant ? `${occupant.number} ${occupant.name}` : "clear"}
+            tone={blocked ? "critical" : occupant ? "warning" : "ok"}
+          />
+          <Row label="Minimum interval" value={res ? `${res.headwaySec.toFixed(0)}s` : "—"} />
         </div>
       </Panel>
     );
   }
 
-  if (selection.kind === "track") {
-    const tr = tracks.find((t) => t.id === selection.id);
-    if (!tr) return null;
-    const users = Object.values(view.trains)
-      .filter((ts) => !ts.finished && routeFor(view, ts.trainId).tracks.includes(tr.id))
-      .map((ts) => fleetById[ts.trainId]!.number);
-    return (
-      <Panel className={className}>
-        <PanelHead title={tr.name} meta={tr.id} />
-        <div className="px-3 pb-3">
-          <Row label="Line" value={tr.kind.replace(/_/g, " ")} />
-          <Row label="Direction" value={tr.direction.replace(/_/g, " ")} />
-          <Row label="Through line" value={tr.through ? "YES" : "NO"} />
-          <Row label="Booked movements" value={users.length ? users.join(", ") : "NONE"} />
-        </div>
-      </Panel>
-    );
-  }
-
-  const c = prediction.conflicts.find((x) => x.id === selection.id);
+  const c = conflicts.find((x) => x.id === selection.id);
   if (!c) {
     return (
       <Panel className={className}>
-        <PanelHead title="Conflict" meta="resolved / expired" tone="ok" />
+        <PanelHead title="Conflict" meta="resolved or expired" tone="ok" />
         <p className="px-3 py-4 text-[12px] text-muted-foreground">
-          This contention is no longer predicted within the horizon.
+          This contention is no longer predicted.
         </p>
       </Panel>
     );
@@ -127,19 +146,30 @@ export function Inspector({ className }: { className?: string }) {
   return (
     <Panel className={className}>
       <PanelHead
-        title={conflictKindLabel(c.kind)}
-        meta={c.id}
+        title={c.resourceLabel}
+        meta={c.resourceKind.toLowerCase()}
         tone={c.severity === "CRITICAL" ? "critical" : "warning"}
         right={<Tag tone={c.severity === "CRITICAL" ? "critical" : "warning"}>{c.severity}</Tag>}
       />
       <div className="px-3 pb-3">
-        <Row label="Contended resource" value={c.resourceLabel} />
-        <Row label="Time to conflict" value={`T+${mmss(c.etaSec)}`} tone="warning" />
-        <Row label="Train A" value={fleetById[c.trainA]?.number ?? c.trainA} />
-        <Row label="Train B" value={c.trainB ? (fleetById[c.trainB]?.number ?? c.trainB) : "—"} />
-        <Row label="Projected separation" value={`${Math.round(c.separationSec)}s`} tone="critical" />
-        <Row label="Required separation" value={`${c.requiredSeparationSec}s`} />
+        <Row label="Happens" value={countdown(c.etaSec)} tone="warning" />
+        <Row label="First movement" value={short(c.trainA)} />
+        <Row label="Second movement" value={c.trainB ? short(c.trainB) : "—"} />
+        <Row
+          label="What goes wrong"
+          value={
+            c.severity === "CRITICAL"
+              ? "The second train would be stopped at the signal"
+              : "Too close for the required interval; the train loses time"
+          }
+        />
       </div>
     </Panel>
   );
+}
+
+/** Ids look like L-90632-308; a controller only ever says "90632". */
+function short(id: string): string {
+  const parts = id.split("-");
+  return parts.length > 1 ? (parts[1] as string) : id;
 }

@@ -33,6 +33,15 @@ services:
       RAILTWIN_DATABASE_URL: "postgresql://rail:rail@postgres:5432/railtwin"
       RAILTWIN_REDIS_URL: "redis://redis:6379/0"
       RAILTWIN_CORS_ORIGINS: "*"
+      # RailRadar: `replay` drives the demo from the recorded feed with no key
+      # and no network. Set MODE=live and supply a key in .env to go live; the
+      # monthly budget guard then caps spend at the free tier's 1,000 calls.
+      RAILTWIN_RAILRADAR_MODE: "${RAILTWIN_RAILRADAR_MODE:-replay}"
+      RAILTWIN_RAILRADAR_API_KEY: "${RAILTWIN_RAILRADAR_API_KEY:-}"
+      RAILTWIN_RAILRADAR_MONTHLY_BUDGET: "${RAILTWIN_RAILRADAR_MONTHLY_BUDGET:-1000}"
+      RAILTWIN_RAILRADAR_POLL_SECONDS: "${RAILTWIN_RAILRADAR_POLL_SECONDS:-1200}"
+      RAILTWIN_RAILRADAR_WATCHLIST_SIZE: "${RAILTWIN_RAILRADAR_WATCHLIST_SIZE:-6}"
+      RAILTWIN_RAILRADAR_REPLAY_FILE: "/srv/data/railradar-replay.json"
     ports:
       - "8000:8000"
     healthcheck:

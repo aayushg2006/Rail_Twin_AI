@@ -55,10 +55,24 @@ async def lifespan(app: FastAPI):
                 "reason": f"ML not in use: {reason}. The deterministic projection is authoritative."}
     except Exception as exc:
         orch.model_status["ml"] = {"status": "DETERMINISTIC_FALLBACK", "reason": str(exc)}
+    # RailRadar ingestion. Off by default; `replay` needs no network and no key.
+    try:
+        from .ingest.service import IngestionService
+        app.state.ingest = IngestionService(orch)
+        orch.ingest = app.state.ingest
+        await app.state.ingest.start()
+    except Exception as exc:
+        app.state.ingest = None
+        orch.ingest = None
+        import logging
+        logging.getLogger("railtwin").warning("ingestion unavailable: %s", exc)
     await orch.start()
     try:
         yield
     finally:
+        with contextlib.suppress(Exception):
+            if getattr(app.state, "ingest", None):
+                await app.state.ingest.stop()
         await orch.stop()
         with contextlib.suppress(Exception):
             audit = getattr(app.state, "audit", None)

@@ -576,7 +576,11 @@ class SimulationEngine:
                 lateness_sec=rt.lateness_sec(now, self.service_epoch_sec),
                 next_use_index=rt.next_use_index,
                 dwell_remaining=rt.dwell_remaining(now),
-                hold_remaining=rt.hold_remaining(now),
+                # A hold the controller has just accepted has not been consumed
+                # yet - it bites when the train next reaches a signal. The
+                # projection must still account for it, or an accepted decision
+                # looks as though it changed nothing.
+                hold_remaining=rt.hold_remaining(now) + rt.pending_hold_sec,
                 finished=rt.finished, admitted=rt.admitted, priority=rt.priority,
                 category=rt.category, service_class=rt.service_class,
                 booked_dep_sec=rt.booked_dep_sec, entry_at_sec=rt.entry_at_sec,

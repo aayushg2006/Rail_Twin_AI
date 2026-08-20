@@ -72,6 +72,29 @@ class Settings(BaseSettings):
     port: int = 8000
     cors_origins: str = "*"
 
+    # --- RailRadar live data ---
+    # RailRadar publishes running status for PASSENGER services only; goods
+    # movements have no public feed and stay synthetic. The free tier allows
+    # 1,000 requests a month and returns delay + last reported halt rather than
+    # a position stream, so the twin polls a small watchlist and interpolates
+    # between observations.
+    #   off     no external calls at all (default)
+    #   replay  drive from a recorded feed - the demo never touches the network
+    #   live    call the API, subject to the monthly budget below
+    railradar_mode: str = "off"
+    railradar_api_key: str | None = Field(default=None)
+    railradar_base_url: str = "https://railradar.in/api"
+    railradar_station: str = "BSR"
+    # Hard cap. Once spent, the client refuses to call until the month rolls.
+    railradar_monthly_budget: int = 1000
+    railradar_poll_seconds: int = 1200      # 20 min - ~72 calls/day at 1 train
+    railradar_watchlist_size: int = 6       # trains polled each cycle
+    railradar_cache_ttl_seconds: int = 900
+    railradar_timeout_seconds: float = 8.0
+    railradar_replay_file: str = "data/railradar-replay.json"
+    # Persist every observation for later retraining on real lateness.
+    railradar_collect: bool = True
+
     # --- ML ---
     artifacts_dir: str = "app/prediction/artifacts"
     ml_confidence_floor: float = 0.35        # below this -> LOW_CONFIDENCE, use deterministic

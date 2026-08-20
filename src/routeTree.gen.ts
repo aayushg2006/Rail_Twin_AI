@@ -13,7 +13,6 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ConflictRouteImport } from './routes/conflict'
 import { Route as DecisionRouteImport } from './routes/decision'
 import { Route as LogRouteImport } from './routes/log'
-import { Route as ScenarioRouteImport } from './routes/scenario'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -35,25 +34,18 @@ const LogRoute = LogRouteImport.update({
   path: '/log',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ScenarioRoute = ScenarioRouteImport.update({
-  id: '/scenario',
-  path: '/scenario',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/conflict': typeof ConflictRoute
   '/decision': typeof DecisionRoute
   '/log': typeof LogRoute
-  '/scenario': typeof ScenarioRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/conflict': typeof ConflictRoute
   '/decision': typeof DecisionRoute
   '/log': typeof LogRoute
-  '/scenario': typeof ScenarioRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -61,14 +53,13 @@ export interface FileRoutesById {
   '/conflict': typeof ConflictRoute
   '/decision': typeof DecisionRoute
   '/log': typeof LogRoute
-  '/scenario': typeof ScenarioRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/conflict' | '/decision' | '/log' | '/scenario'
+  fullPaths: '/' | '/conflict' | '/decision' | '/log'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/conflict' | '/decision' | '/log' | '/scenario'
-  id: '__root__' | '/' | '/conflict' | '/decision' | '/log' | '/scenario'
+  to: '/' | '/conflict' | '/decision' | '/log'
+  id: '__root__' | '/' | '/conflict' | '/decision' | '/log'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -76,7 +67,6 @@ export interface RootRouteChildren {
   ConflictRoute: typeof ConflictRoute
   DecisionRoute: typeof DecisionRoute
   LogRoute: typeof LogRoute
-  ScenarioRoute: typeof ScenarioRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -109,13 +99,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LogRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/scenario': {
-      id: '/scenario'
-      path: '/scenario'
-      fullPath: '/scenario'
-      preLoaderRoute: typeof ScenarioRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
@@ -124,7 +107,6 @@ const rootRouteChildren: RootRouteChildren = {
   ConflictRoute: ConflictRoute,
   DecisionRoute: DecisionRoute,
   LogRoute: LogRoute,
-  ScenarioRoute: ScenarioRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

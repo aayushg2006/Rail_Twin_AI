@@ -1,0 +1,3188 @@
+{
+ "id": "RR-REPLAY-SYNTH-42",
+ "generatedAt": "2026-08-20T16:37:23+00:00",
+ "provenance": "synthetic",
+ "provenanceNote": "A stand-in for the RailRadar live feed so the console can be demonstrated without spending API budget or depending on the network. Lateness is drawn from a distribution matching published Indian Railways punctuality; these are NOT real observations. Run tools/ingest/gen_replay.py --from-live to capture genuine readings.",
+ "observations": [
+  {
+   "number": "91260",
+   "latenessSec": 3,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:29:02+00:00"
+  },
+  {
+   "number": "12283",
+   "latenessSec": 177,
+   "lastStation": "JCNR",
+   "observedAt": "2026-08-20T16:17:14+00:00"
+  },
+  {
+   "number": "91243",
+   "latenessSec": 4,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:29:27+00:00"
+  },
+  {
+   "number": "91262",
+   "latenessSec": 3,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:12:57+00:00"
+  },
+  {
+   "number": "91197",
+   "latenessSec": 65,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:22:04+00:00"
+  },
+  {
+   "number": "12298",
+   "latenessSec": 2637,
+   "lastStation": "KHBV",
+   "observedAt": "2026-08-20T16:27:54+00:00"
+  },
+  {
+   "number": "91211",
+   "latenessSec": 115,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:33:54+00:00"
+  },
+  {
+   "number": "91215",
+   "latenessSec": 12,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:16:47+00:00"
+  },
+  {
+   "number": "19019",
+   "latenessSec": 10,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:19:05+00:00"
+  },
+  {
+   "number": "91219",
+   "latenessSec": 111,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:18:33+00:00"
+  },
+  {
+   "number": "91223",
+   "latenessSec": 75,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:17:41+00:00"
+  },
+  {
+   "number": "91235",
+   "latenessSec": 8,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:11:00+00:00"
+  },
+  {
+   "number": "91245",
+   "latenessSec": 10,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:07:49+00:00"
+  },
+  {
+   "number": "91295",
+   "latenessSec": 33,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:31:50+00:00"
+  },
+  {
+   "number": "11049",
+   "latenessSec": 50,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:13:26+00:00"
+  },
+  {
+   "number": "11087",
+   "latenessSec": 1046,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:19:10+00:00"
+  },
+  {
+   "number": "11089",
+   "latenessSec": 273,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:14:01+00:00"
+  },
+  {
+   "number": "11091",
+   "latenessSec": 184,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:29:34+00:00"
+  },
+  {
+   "number": "20475",
+   "latenessSec": 1265,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:30:11+00:00"
+  },
+  {
+   "number": "22185",
+   "latenessSec": 852,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:15:01+00:00"
+  },
+  {
+   "number": "90006",
+   "latenessSec": 106,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:32:31+00:00"
+  },
+  {
+   "number": "12297",
+   "latenessSec": 59,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:11:54+00:00"
+  },
+  {
+   "number": "90012",
+   "latenessSec": 108,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:25:02+00:00"
+  },
+  {
+   "number": "90022",
+   "latenessSec": 120,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:34:17+00:00"
+  },
+  {
+   "number": "12940",
+   "latenessSec": 1121,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:10:21+00:00"
+  },
+  {
+   "number": "12978",
+   "latenessSec": 756,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:19:20+00:00"
+  },
+  {
+   "number": "22979",
+   "latenessSec": 133,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:14:10+00:00"
+  },
+  {
+   "number": "90026",
+   "latenessSec": 238,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:11:09+00:00"
+  },
+  {
+   "number": "09062",
+   "latenessSec": 221,
+   "lastStation": "BIRD",
+   "observedAt": "2026-08-20T16:37:17+00:00"
+  },
+  {
+   "number": "90032",
+   "latenessSec": 274,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:20:04+00:00"
+  },
+  {
+   "number": "92002",
+   "latenessSec": 280,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:32:10+00:00"
+  },
+  {
+   "number": "22944",
+   "latenessSec": 39,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:16:57+00:00"
+  },
+  {
+   "number": "90042",
+   "latenessSec": 2,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:07:24+00:00"
+  },
+  {
+   "number": "20992",
+   "latenessSec": 1084,
+   "lastStation": "KARD",
+   "observedAt": "2026-08-20T16:07:25+00:00"
+  },
+  {
+   "number": "22193",
+   "latenessSec": 636,
+   "lastStation": "BIRD",
+   "observedAt": "2026-08-20T16:18:38+00:00"
+  },
+  {
+   "number": "22653",
+   "latenessSec": 127,
+   "lastStation": "BIRD",
+   "observedAt": "2026-08-20T16:30:10+00:00"
+  },
+  {
+   "number": "22655",
+   "latenessSec": 1999,
+   "lastStation": "KHBV",
+   "observedAt": "2026-08-20T16:23:46+00:00"
+  },
+  {
+   "number": "90052",
+   "latenessSec": 204,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:33:16+00:00"
+  },
+  {
+   "number": "90056",
+   "latenessSec": 8,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:17:19+00:00"
+  },
+  {
+   "number": "92001",
+   "latenessSec": 71,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:34:58+00:00"
+  },
+  {
+   "number": "92007",
+   "latenessSec": 64,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:27:53+00:00"
+  },
+  {
+   "number": "92004",
+   "latenessSec": 26,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:12:42+00:00"
+  },
+  {
+   "number": "90064",
+   "latenessSec": 174,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:09:50+00:00"
+  },
+  {
+   "number": "90007",
+   "latenessSec": 11,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:25:18+00:00"
+  },
+  {
+   "number": "92006",
+   "latenessSec": 56,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:14:24+00:00"
+  },
+  {
+   "number": "90011",
+   "latenessSec": 78,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:23:39+00:00"
+  },
+  {
+   "number": "90070",
+   "latenessSec": 223,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:30:54+00:00"
+  },
+  {
+   "number": "90074",
+   "latenessSec": 17,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:27:53+00:00"
+  },
+  {
+   "number": "90013",
+   "latenessSec": 105,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:22:16+00:00"
+  },
+  {
+   "number": "90009",
+   "latenessSec": 221,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:34:12+00:00"
+  },
+  {
+   "number": "90015",
+   "latenessSec": 245,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:20:58+00:00"
+  },
+  {
+   "number": "90080",
+   "latenessSec": 48,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:31:46+00:00"
+  },
+  {
+   "number": "92008",
+   "latenessSec": 118,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:10:38+00:00"
+  },
+  {
+   "number": "90017",
+   "latenessSec": 63,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:32:06+00:00"
+  },
+  {
+   "number": "90084",
+   "latenessSec": 26,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:17:37+00:00"
+  },
+  {
+   "number": "90088",
+   "latenessSec": 69,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:17:27+00:00"
+  },
+  {
+   "number": "90027",
+   "latenessSec": 110,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:35:27+00:00"
+  },
+  {
+   "number": "09021",
+   "latenessSec": 284,
+   "lastStation": "JCNR",
+   "observedAt": "2026-08-20T16:14:21+00:00"
+  },
+  {
+   "number": "09123",
+   "latenessSec": 54,
+   "lastStation": "KARD",
+   "observedAt": "2026-08-20T16:17:38+00:00"
+  },
+  {
+   "number": "90092",
+   "latenessSec": 74,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:14:57+00:00"
+  },
+  {
+   "number": "92055",
+   "latenessSec": 63,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:30:25+00:00"
+  },
+  {
+   "number": "93002",
+   "latenessSec": 38,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:23:53+00:00"
+  },
+  {
+   "number": "SPL",
+   "latenessSec": 77,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:26:36+00:00"
+  },
+  {
+   "number": "12218",
+   "latenessSec": 902,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:34:53+00:00"
+  },
+  {
+   "number": "12484",
+   "latenessSec": 608,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:35:03+00:00"
+  },
+  {
+   "number": "22660",
+   "latenessSec": 480,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:16:31+00:00"
+  },
+  {
+   "number": "90102",
+   "latenessSec": 325,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:14:45+00:00"
+  },
+  {
+   "number": "93005",
+   "latenessSec": 105,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:33:27+00:00"
+  },
+  {
+   "number": "12755",
+   "latenessSec": 915,
+   "lastStation": "KHBV",
+   "observedAt": "2026-08-20T16:16:45+00:00"
+  },
+  {
+   "number": "16614",
+   "latenessSec": 82,
+   "lastStation": "KHBV",
+   "observedAt": "2026-08-20T16:20:08+00:00"
+  },
+  {
+   "number": "20967",
+   "latenessSec": 215,
+   "lastStation": "KHBV",
+   "observedAt": "2026-08-20T16:35:53+00:00"
+  },
+  {
+   "number": "22718",
+   "latenessSec": 185,
+   "lastStation": "KHBV",
+   "observedAt": "2026-08-20T16:31:53+00:00"
+  },
+  {
+   "number": "90112",
+   "latenessSec": 165,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:33:34+00:00"
+  },
+  {
+   "number": "92003",
+   "latenessSec": 106,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:18:46+00:00"
+  },
+  {
+   "number": "90126",
+   "latenessSec": 44,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:22:43+00:00"
+  },
+  {
+   "number": "90116",
+   "latenessSec": 37,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:25:11+00:00"
+  },
+  {
+   "number": "69174",
+   "latenessSec": 30,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:25:19+00:00"
+  },
+  {
+   "number": "90043",
+   "latenessSec": 323,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:29:19+00:00"
+  },
+  {
+   "number": "90041",
+   "latenessSec": 227,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:10:01+00:00"
+  },
+  {
+   "number": "90124",
+   "latenessSec": 88,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:28:17+00:00"
+  },
+  {
+   "number": "09014",
+   "latenessSec": 168,
+   "lastStation": "BIRD",
+   "observedAt": "2026-08-20T16:07:37+00:00"
+  },
+  {
+   "number": "90049",
+   "latenessSec": 56,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:09:31+00:00"
+  },
+  {
+   "number": "90144",
+   "latenessSec": 54,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:29:47+00:00"
+  },
+  {
+   "number": "92056",
+   "latenessSec": 23,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:27:53+00:00"
+  },
+  {
+   "number": "90063",
+   "latenessSec": 323,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:14:12+00:00"
+  },
+  {
+   "number": "90156",
+   "latenessSec": 304,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:07:27+00:00"
+  },
+  {
+   "number": "90067",
+   "latenessSec": 108,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:25:36+00:00"
+  },
+  {
+   "number": "92010",
+   "latenessSec": 84,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:24:15+00:00"
+  },
+  {
+   "number": "90055",
+   "latenessSec": 126,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:24:58+00:00"
+  },
+  {
+   "number": "69164",
+   "latenessSec": 114,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:16:07+00:00"
+  },
+  {
+   "number": "90172",
+   "latenessSec": 102,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:20:05+00:00"
+  },
+  {
+   "number": "93007",
+   "latenessSec": 49,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:13:36+00:00"
+  },
+  {
+   "number": "90061",
+   "latenessSec": 15,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:14:42+00:00"
+  },
+  {
+   "number": "61002",
+   "latenessSec": 181,
+   "lastStation": "JCNR",
+   "observedAt": "2026-08-20T16:27:01+00:00"
+  },
+  {
+   "number": "90071",
+   "latenessSec": 52,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:21:31+00:00"
+  },
+  {
+   "number": "90166",
+   "latenessSec": 81,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:10:18+00:00"
+  },
+  {
+   "number": "90184",
+   "latenessSec": 228,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:27:42+00:00"
+  },
+  {
+   "number": "90097",
+   "latenessSec": 76,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:34:12+00:00"
+  },
+  {
+   "number": "90180",
+   "latenessSec": 373,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:09:52+00:00"
+  },
+  {
+   "number": "90081",
+   "latenessSec": 3,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:21:10+00:00"
+  },
+  {
+   "number": "93004",
+   "latenessSec": 92,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:23:15+00:00"
+  },
+  {
+   "number": "90190",
+   "latenessSec": 205,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:20:31+00:00"
+  },
+  {
+   "number": "90196",
+   "latenessSec": 18,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:11:46+00:00"
+  },
+  {
+   "number": "92057",
+   "latenessSec": 26,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:35:41+00:00"
+  },
+  {
+   "number": "90091",
+   "latenessSec": 110,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:21:49+00:00"
+  },
+  {
+   "number": "69139",
+   "latenessSec": 56,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:11:37+00:00"
+  },
+  {
+   "number": "90109",
+   "latenessSec": 240,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:09:02+00:00"
+  },
+  {
+   "number": "90208",
+   "latenessSec": 137,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:22:02+00:00"
+  },
+  {
+   "number": "90228",
+   "latenessSec": 30,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:11:15+00:00"
+  },
+  {
+   "number": "90216",
+   "latenessSec": 145,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:34:45+00:00"
+  },
+  {
+   "number": "90234",
+   "latenessSec": 92,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:32:40+00:00"
+  },
+  {
+   "number": "90222",
+   "latenessSec": 46,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:13:17+00:00"
+  },
+  {
+   "number": "90127",
+   "latenessSec": 50,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:18:52+00:00"
+  },
+  {
+   "number": "92058",
+   "latenessSec": 7,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:24:06+00:00"
+  },
+  {
+   "number": "90139",
+   "latenessSec": 207,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:21:07+00:00"
+  },
+  {
+   "number": "92009",
+   "latenessSec": 42,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:08:16+00:00"
+  },
+  {
+   "number": "10115",
+   "latenessSec": 1737,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:20:44+00:00"
+  },
+  {
+   "number": "94135",
+   "latenessSec": 52,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:24:07+00:00"
+  },
+  {
+   "number": "90151",
+   "latenessSec": 81,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:12:40+00:00"
+  },
+  {
+   "number": "93009",
+   "latenessSec": 56,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:16:09+00:00"
+  },
+  {
+   "number": "92014",
+   "latenessSec": 109,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:34:32+00:00"
+  },
+  {
+   "number": "90159",
+   "latenessSec": 16,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:31:11+00:00"
+  },
+  {
+   "number": "90274",
+   "latenessSec": 45,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:21:52+00:00"
+  },
+  {
+   "number": "90165",
+   "latenessSec": 91,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:27:54+00:00"
+  },
+  {
+   "number": "90149",
+   "latenessSec": 253,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:21:20+00:00"
+  },
+  {
+   "number": "90153",
+   "latenessSec": 65,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:29:44+00:00"
+  },
+  {
+   "number": "90276",
+   "latenessSec": 94,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:11:39+00:00"
+  },
+  {
+   "number": "90169",
+   "latenessSec": 30,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:16:11+00:00"
+  },
+  {
+   "number": "90284",
+   "latenessSec": 15,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:18:08+00:00"
+  },
+  {
+   "number": "90171",
+   "latenessSec": 140,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:31:40+00:00"
+  },
+  {
+   "number": "90288",
+   "latenessSec": 116,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:10:51+00:00"
+  },
+  {
+   "number": "93008",
+   "latenessSec": 65,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:23:51+00:00"
+  },
+  {
+   "number": "94136",
+   "latenessSec": 61,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:33:55+00:00"
+  },
+  {
+   "number": "90292",
+   "latenessSec": 36,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:10:13+00:00"
+  },
+  {
+   "number": "90181",
+   "latenessSec": 250,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:14:49+00:00"
+  },
+  {
+   "number": "90187",
+   "latenessSec": 61,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:36:58+00:00"
+  },
+  {
+   "number": "93011",
+   "latenessSec": 229,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:15:42+00:00"
+  },
+  {
+   "number": "90300",
+   "latenessSec": 140,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:12:21+00:00"
+  },
+  {
+   "number": "90191",
+   "latenessSec": 78,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:21:31+00:00"
+  },
+  {
+   "number": "90197",
+   "latenessSec": 88,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:26:23+00:00"
+  },
+  {
+   "number": "90314",
+   "latenessSec": 272,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:17:56+00:00"
+  },
+  {
+   "number": "90209",
+   "latenessSec": 45,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:20:31+00:00"
+  },
+  {
+   "number": "09323",
+   "latenessSec": 334,
+   "lastStation": "KHBV",
+   "observedAt": "2026-08-20T16:25:46+00:00"
+  },
+  {
+   "number": "90320",
+   "latenessSec": 72,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:18:25+00:00"
+  },
+  {
+   "number": "90193",
+   "latenessSec": 114,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:29:09+00:00"
+  },
+  {
+   "number": "92013",
+   "latenessSec": 140,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:15:21+00:00"
+  },
+  {
+   "number": "92062",
+   "latenessSec": 139,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:29:50+00:00"
+  },
+  {
+   "number": "92011",
+   "latenessSec": 29,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:21:14+00:00"
+  },
+  {
+   "number": "90215",
+   "latenessSec": 41,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:25:23+00:00"
+  },
+  {
+   "number": "19567",
+   "latenessSec": 385,
+   "lastStation": "JCNR",
+   "observedAt": "2026-08-20T16:12:46+00:00"
+  },
+  {
+   "number": "90336",
+   "latenessSec": 14,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:30:51+00:00"
+  },
+  {
+   "number": "92016",
+   "latenessSec": 58,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:33:58+00:00"
+  },
+  {
+   "number": "90338",
+   "latenessSec": 101,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:36:55+00:00"
+  },
+  {
+   "number": "90352",
+   "latenessSec": 70,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:15:37+00:00"
+  },
+  {
+   "number": "90229",
+   "latenessSec": 136,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:21:22+00:00"
+  },
+  {
+   "number": "90354",
+   "latenessSec": 41,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:28:46+00:00"
+  },
+  {
+   "number": "90239",
+   "latenessSec": 128,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:20:36+00:00"
+  },
+  {
+   "number": "90358",
+   "latenessSec": 76,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:32:13+00:00"
+  },
+  {
+   "number": "90366",
+   "latenessSec": 68,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:34:29+00:00"
+  },
+  {
+   "number": "90243",
+   "latenessSec": 273,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:10:55+00:00"
+  },
+  {
+   "number": "90231",
+   "latenessSec": 54,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:27:15+00:00"
+  },
+  {
+   "number": "90249",
+   "latenessSec": 215,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:11:21+00:00"
+  },
+  {
+   "number": "90372",
+   "latenessSec": 25,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:32:02+00:00"
+  },
+  {
+   "number": "92018",
+   "latenessSec": 66,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:37:18+00:00"
+  },
+  {
+   "number": "61003",
+   "latenessSec": 83,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:27:27+00:00"
+  },
+  {
+   "number": "90378",
+   "latenessSec": 35,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:13:24+00:00"
+  },
+  {
+   "number": "92020",
+   "latenessSec": 76,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:10:30+00:00"
+  },
+  {
+   "number": "90257",
+   "latenessSec": 257,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:22:53+00:00"
+  },
+  {
+   "number": "19055",
+   "latenessSec": 54,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:28:19+00:00"
+  },
+  {
+   "number": "90392",
+   "latenessSec": 59,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:22:24+00:00"
+  },
+  {
+   "number": "93015",
+   "latenessSec": 83,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:28:06+00:00"
+  },
+  {
+   "number": "93010",
+   "latenessSec": 59,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:16:59+00:00"
+  },
+  {
+   "number": "19578",
+   "latenessSec": 104,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:16:47+00:00"
+  },
+  {
+   "number": "20910",
+   "latenessSec": 22,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:11:17+00:00"
+  },
+  {
+   "number": "20932",
+   "latenessSec": 1219,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:27:54+00:00"
+  },
+  {
+   "number": "22908",
+   "latenessSec": 140,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:34:17+00:00"
+  },
+  {
+   "number": "94003",
+   "latenessSec": 49,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:14:31+00:00"
+  },
+  {
+   "number": "90402",
+   "latenessSec": 19,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:13:43+00:00"
+  },
+  {
+   "number": "90404",
+   "latenessSec": 80,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:09:37+00:00"
+  },
+  {
+   "number": "90289",
+   "latenessSec": 106,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:07:52+00:00"
+  },
+  {
+   "number": "90412",
+   "latenessSec": 119,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:23:17+00:00"
+  },
+  {
+   "number": "19015",
+   "latenessSec": 124,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:16:03+00:00"
+  },
+  {
+   "number": "90285",
+   "latenessSec": 6,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:18:39+00:00"
+  },
+  {
+   "number": "92061",
+   "latenessSec": 35,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:33:15+00:00"
+  },
+  {
+   "number": "90416",
+   "latenessSec": 76,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:13:10+00:00"
+  },
+  {
+   "number": "90301",
+   "latenessSec": 66,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:34:13+00:00"
+  },
+  {
+   "number": "90424",
+   "latenessSec": 101,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:21:38+00:00"
+  },
+  {
+   "number": "94004",
+   "latenessSec": 183,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:20:01+00:00"
+  },
+  {
+   "number": "90295",
+   "latenessSec": 122,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:29:04+00:00"
+  },
+  {
+   "number": "90321",
+   "latenessSec": 17,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:16:56+00:00"
+  },
+  {
+   "number": "92015",
+   "latenessSec": 106,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:27:58+00:00"
+  },
+  {
+   "number": "90438",
+   "latenessSec": 283,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:09:23+00:00"
+  },
+  {
+   "number": "90311",
+   "latenessSec": 87,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:07:51+00:00"
+  },
+  {
+   "number": "90333",
+   "latenessSec": 65,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:26:03+00:00"
+  },
+  {
+   "number": "09109",
+   "latenessSec": 676,
+   "lastStation": "KHBV",
+   "observedAt": "2026-08-20T16:07:43+00:00"
+  },
+  {
+   "number": "09113",
+   "latenessSec": 167,
+   "lastStation": "BIRD",
+   "observedAt": "2026-08-20T16:29:25+00:00"
+  },
+  {
+   "number": "90442",
+   "latenessSec": 127,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:13:19+00:00"
+  },
+  {
+   "number": "93017",
+   "latenessSec": 407,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:20:29+00:00"
+  },
+  {
+   "number": "90349",
+   "latenessSec": 119,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:33:59+00:00"
+  },
+  {
+   "number": "90456",
+   "latenessSec": 55,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:23:24+00:00"
+  },
+  {
+   "number": "90460",
+   "latenessSec": 235,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:15:13+00:00"
+  },
+  {
+   "number": "92063",
+   "latenessSec": 39,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:26:35+00:00"
+  },
+  {
+   "number": "90462",
+   "latenessSec": 106,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:07:37+00:00"
+  },
+  {
+   "number": "90363",
+   "latenessSec": 74,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:15:51+00:00"
+  },
+  {
+   "number": "93019",
+   "latenessSec": 34,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:11:54+00:00"
+  },
+  {
+   "number": "09036",
+   "latenessSec": 235,
+   "lastStation": "JCNR",
+   "observedAt": "2026-08-20T16:22:15+00:00"
+  },
+  {
+   "number": "92019",
+   "latenessSec": 36,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:35:49+00:00"
+  },
+  {
+   "number": "90468",
+   "latenessSec": 7,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:24:36+00:00"
+  },
+  {
+   "number": "92024",
+   "latenessSec": 29,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:18:04+00:00"
+  },
+  {
+   "number": "90369",
+   "latenessSec": 22,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:34:42+00:00"
+  },
+  {
+   "number": "90365",
+   "latenessSec": 46,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:20:24+00:00"
+  },
+  {
+   "number": "90474",
+   "latenessSec": 67,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:21:42+00:00"
+  },
+  {
+   "number": "90379",
+   "latenessSec": 1,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:27:34+00:00"
+  },
+  {
+   "number": "90385",
+   "latenessSec": 19,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:25:36+00:00"
+  },
+  {
+   "number": "90480",
+   "latenessSec": 226,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:30:36+00:00"
+  },
+  {
+   "number": "90399",
+   "latenessSec": 119,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:13:31+00:00"
+  },
+  {
+   "number": "92064",
+   "latenessSec": 117,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:28:01+00:00"
+  },
+  {
+   "number": "90393",
+   "latenessSec": 104,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:16:42+00:00"
+  },
+  {
+   "number": "90494",
+   "latenessSec": 228,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:29:55+00:00"
+  },
+  {
+   "number": "90395",
+   "latenessSec": 75,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:15:57+00:00"
+  },
+  {
+   "number": "92026",
+   "latenessSec": 75,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:26:51+00:00"
+  },
+  {
+   "number": "92021",
+   "latenessSec": 61,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:34:19+00:00"
+  },
+  {
+   "number": "90500",
+   "latenessSec": 104,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:32:53+00:00"
+  },
+  {
+   "number": "90423",
+   "latenessSec": 303,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:09:03+00:00"
+  },
+  {
+   "number": "90506",
+   "latenessSec": 110,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:09:52+00:00"
+  },
+  {
+   "number": "90409",
+   "latenessSec": 104,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:21:24+00:00"
+  },
+  {
+   "number": "09029",
+   "latenessSec": 4041,
+   "lastStation": "BIRD",
+   "observedAt": "2026-08-20T16:08:31+00:00"
+  },
+  {
+   "number": "14805",
+   "latenessSec": 236,
+   "lastStation": "JCNR",
+   "observedAt": "2026-08-20T16:28:22+00:00"
+  },
+  {
+   "number": "20667",
+   "latenessSec": 492,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:17:26+00:00"
+  },
+  {
+   "number": "20915",
+   "latenessSec": 153,
+   "lastStation": "KHBV",
+   "observedAt": "2026-08-20T16:33:42+00:00"
+  },
+  {
+   "number": "22498",
+   "latenessSec": 540,
+   "lastStation": "KHBV",
+   "observedAt": "2026-08-20T16:16:34+00:00"
+  },
+  {
+   "number": "90508",
+   "latenessSec": 8,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:13:28+00:00"
+  },
+  {
+   "number": "90413",
+   "latenessSec": 49,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:35:51+00:00"
+  },
+  {
+   "number": "90435",
+   "latenessSec": 93,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:29:23+00:00"
+  },
+  {
+   "number": "69168",
+   "latenessSec": 67,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:17:21+00:00"
+  },
+  {
+   "number": "90514",
+   "latenessSec": 73,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:08:56+00:00"
+  },
+  {
+   "number": "90439",
+   "latenessSec": 49,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:36:16+00:00"
+  },
+  {
+   "number": "90522",
+   "latenessSec": 26,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:29:20+00:00"
+  },
+  {
+   "number": "09013",
+   "latenessSec": 7200,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:35:19+00:00"
+  },
+  {
+   "number": "09019",
+   "latenessSec": 46,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:08:27+00:00"
+  },
+  {
+   "number": "09022",
+   "latenessSec": 283,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:35:40+00:00"
+  },
+  {
+   "number": "09124",
+   "latenessSec": 392,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:35:03+00:00"
+  },
+  {
+   "number": "90524",
+   "latenessSec": 174,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:26:11+00:00"
+  },
+  {
+   "number": "20495",
+   "latenessSec": 1706,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:08:05+00:00"
+  },
+  {
+   "number": "90451",
+   "latenessSec": 222,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:32:54+00:00"
+  },
+  {
+   "number": "92028",
+   "latenessSec": 95,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:17:18+00:00"
+  },
+  {
+   "number": "90461",
+   "latenessSec": 21,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:33:04+00:00"
+  },
+  {
+   "number": "90530",
+   "latenessSec": 168,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:22:05+00:00"
+  },
+  {
+   "number": "90443",
+   "latenessSec": 151,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:16:24+00:00"
+  },
+  {
+   "number": "90540",
+   "latenessSec": 94,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:21:45+00:00"
+  },
+  {
+   "number": "92023",
+   "latenessSec": 4,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:08:28+00:00"
+  },
+  {
+   "number": "12217",
+   "latenessSec": 165,
+   "lastStation": "BIRD",
+   "observedAt": "2026-08-20T16:13:05+00:00"
+  },
+  {
+   "number": "12483",
+   "latenessSec": 713,
+   "lastStation": "KHBV",
+   "observedAt": "2026-08-20T16:16:05+00:00"
+  },
+  {
+   "number": "19668",
+   "latenessSec": 668,
+   "lastStation": "KHBV",
+   "observedAt": "2026-08-20T16:21:54+00:00"
+  },
+  {
+   "number": "22659",
+   "latenessSec": 368,
+   "lastStation": "JCNR",
+   "observedAt": "2026-08-20T16:08:17+00:00"
+  },
+  {
+   "number": "90542",
+   "latenessSec": 105,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:22:43+00:00"
+  },
+  {
+   "number": "90459",
+   "latenessSec": 27,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:09:09+00:00"
+  },
+  {
+   "number": "90471",
+   "latenessSec": 50,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:26:43+00:00"
+  },
+  {
+   "number": "90548",
+   "latenessSec": 80,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:32:11+00:00"
+  },
+  {
+   "number": "61005",
+   "latenessSec": 57,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:09:00+00:00"
+  },
+  {
+   "number": "94005",
+   "latenessSec": 52,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:09:41+00:00"
+  },
+  {
+   "number": "90556",
+   "latenessSec": 7,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:14:31+00:00"
+  },
+  {
+   "number": "19667",
+   "latenessSec": 85,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:07:46+00:00"
+  },
+  {
+   "number": "22194",
+   "latenessSec": 240,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:25:23+00:00"
+  },
+  {
+   "number": "90558",
+   "latenessSec": 61,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:14:59+00:00"
+  },
+  {
+   "number": "90487",
+   "latenessSec": 102,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:08:32+00:00"
+  },
+  {
+   "number": "20991",
+   "latenessSec": 276,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:09:50+00:00"
+  },
+  {
+   "number": "90489",
+   "latenessSec": 67,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:16:36+00:00"
+  },
+  {
+   "number": "90564",
+   "latenessSec": 255,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:28:04+00:00"
+  },
+  {
+   "number": "90501",
+   "latenessSec": 105,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:31:12+00:00"
+  },
+  {
+   "number": "90509",
+   "latenessSec": 170,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:12:06+00:00"
+  },
+  {
+   "number": "90537",
+   "latenessSec": 4,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:24:33+00:00"
+  },
+  {
+   "number": "90572",
+   "latenessSec": 41,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:26:45+00:00"
+  },
+  {
+   "number": "90515",
+   "latenessSec": 320,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:35:36+00:00"
+  },
+  {
+   "number": "90578",
+   "latenessSec": 91,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:14:23+00:00"
+  },
+  {
+   "number": "16587",
+   "latenessSec": 106,
+   "lastStation": "BIRD",
+   "observedAt": "2026-08-20T16:20:49+00:00"
+  },
+  {
+   "number": "92030",
+   "latenessSec": 50,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:11:37+00:00"
+  },
+  {
+   "number": "90517",
+   "latenessSec": 41,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:27:43+00:00"
+  },
+  {
+   "number": "90525",
+   "latenessSec": 71,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:35:50+00:00"
+  },
+  {
+   "number": "94006",
+   "latenessSec": 118,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:37:08+00:00"
+  },
+  {
+   "number": "19418",
+   "latenessSec": 227,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:11:18+00:00"
+  },
+  {
+   "number": "09060",
+   "latenessSec": 79,
+   "lastStation": "JCNR",
+   "observedAt": "2026-08-20T16:20:25+00:00"
+  },
+  {
+   "number": "90590",
+   "latenessSec": 79,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:20:19+00:00"
+  },
+  {
+   "number": "90519",
+   "latenessSec": 80,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:34:56+00:00"
+  },
+  {
+   "number": "90596",
+   "latenessSec": 89,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:36:45+00:00"
+  },
+  {
+   "number": "90541",
+   "latenessSec": 9,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:17:44+00:00"
+  },
+  {
+   "number": "90600",
+   "latenessSec": 49,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:27:31+00:00"
+  },
+  {
+   "number": "90602",
+   "latenessSec": 3,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:31:32+00:00"
+  },
+  {
+   "number": "14806",
+   "latenessSec": 1678,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:34:23+00:00"
+  },
+  {
+   "number": "16588",
+   "latenessSec": 25,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:17:17+00:00"
+  },
+  {
+   "number": "19417",
+   "latenessSec": 19,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:11:56+00:00"
+  },
+  {
+   "number": "90608",
+   "latenessSec": 40,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:34:47+00:00"
+  },
+  {
+   "number": "90549",
+   "latenessSec": 14,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:10:54+00:00"
+  },
+  {
+   "number": "90610",
+   "latenessSec": 87,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:29:20+00:00"
+  },
+  {
+   "number": "90616",
+   "latenessSec": 31,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:16:50+00:00"
+  },
+  {
+   "number": "90618",
+   "latenessSec": 91,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:31:21+00:00"
+  },
+  {
+   "number": "92025",
+   "latenessSec": 198,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:14:09+00:00"
+  },
+  {
+   "number": "90543",
+   "latenessSec": 184,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:07:54+00:00"
+  },
+  {
+   "number": "93018",
+   "latenessSec": 100,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:22:18+00:00"
+  },
+  {
+   "number": "93022",
+   "latenessSec": 96,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:25:23+00:00"
+  },
+  {
+   "number": "12284",
+   "latenessSec": 363,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:24:48+00:00"
+  },
+  {
+   "number": "12494",
+   "latenessSec": 2312,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:21:36+00:00"
+  },
+  {
+   "number": "16311",
+   "latenessSec": 685,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:20:17+00:00"
+  },
+  {
+   "number": "22475",
+   "latenessSec": 15,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:09:43+00:00"
+  },
+  {
+   "number": "22497",
+   "latenessSec": 271,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:36:03+00:00"
+  },
+  {
+   "number": "90624",
+   "latenessSec": 53,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:19:30+00:00"
+  },
+  {
+   "number": "92027",
+   "latenessSec": 19,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:27:44+00:00"
+  },
+  {
+   "number": "92029",
+   "latenessSec": 93,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:10:27+00:00"
+  },
+  {
+   "number": "90632",
+   "latenessSec": 40,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:34:10+00:00"
+  },
+  {
+   "number": "12263",
+   "latenessSec": 482,
+   "lastStation": "KARD",
+   "observedAt": "2026-08-20T16:26:01+00:00"
+  },
+  {
+   "number": "12493",
+   "latenessSec": 159,
+   "lastStation": "KHBV",
+   "observedAt": "2026-08-20T16:26:48+00:00"
+  },
+  {
+   "number": "20919",
+   "latenessSec": 969,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:26:49+00:00"
+  },
+  {
+   "number": "22919",
+   "latenessSec": 822,
+   "lastStation": "KARD",
+   "observedAt": "2026-08-20T16:14:31+00:00"
+  },
+  {
+   "number": "90638",
+   "latenessSec": 225,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:25:01+00:00"
+  },
+  {
+   "number": "90642",
+   "latenessSec": 114,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:11:14+00:00"
+  },
+  {
+   "number": "90587",
+   "latenessSec": 27,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:32:06+00:00"
+  },
+  {
+   "number": "92032",
+   "latenessSec": 101,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:20:04+00:00"
+  },
+  {
+   "number": "09420",
+   "latenessSec": 218,
+   "lastStation": "KARD",
+   "observedAt": "2026-08-20T16:17:00+00:00"
+  },
+  {
+   "number": "90646",
+   "latenessSec": 19,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:12:47+00:00"
+  },
+  {
+   "number": "90589",
+   "latenessSec": 49,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:22:14+00:00"
+  },
+  {
+   "number": "90571",
+   "latenessSec": 90,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:29:24+00:00"
+  },
+  {
+   "number": "90581",
+   "latenessSec": 37,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:08:53+00:00"
+  },
+  {
+   "number": "90601",
+   "latenessSec": 81,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:21:38+00:00"
+  },
+  {
+   "number": "92034",
+   "latenessSec": 291,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:31:52+00:00"
+  },
+  {
+   "number": "92036",
+   "latenessSec": 226,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:35:37+00:00"
+  },
+  {
+   "number": "90593",
+   "latenessSec": 105,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:13:07+00:00"
+  },
+  {
+   "number": "90611",
+   "latenessSec": 268,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:28:05+00:00"
+  },
+  {
+   "number": "90666",
+   "latenessSec": 62,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:34:16+00:00"
+  },
+  {
+   "number": "20923",
+   "latenessSec": 288,
+   "lastStation": "KHBV",
+   "observedAt": "2026-08-20T16:36:29+00:00"
+  },
+  {
+   "number": "20931",
+   "latenessSec": 95,
+   "lastStation": "KHBV",
+   "observedAt": "2026-08-20T16:29:21+00:00"
+  },
+  {
+   "number": "22476",
+   "latenessSec": 20,
+   "lastStation": "KARD",
+   "observedAt": "2026-08-20T16:36:26+00:00"
+  },
+  {
+   "number": "90670",
+   "latenessSec": 12,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:10:23+00:00"
+  },
+  {
+   "number": "90672",
+   "latenessSec": 5,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:13:38+00:00"
+  },
+  {
+   "number": "90617",
+   "latenessSec": 267,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:34:41+00:00"
+  },
+  {
+   "number": "19577",
+   "latenessSec": 52,
+   "lastStation": "KARD",
+   "observedAt": "2026-08-20T16:18:40+00:00"
+  },
+  {
+   "number": "20909",
+   "latenessSec": 793,
+   "lastStation": "KHBV",
+   "observedAt": "2026-08-20T16:29:17+00:00"
+  },
+  {
+   "number": "90621",
+   "latenessSec": 6,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:15:35+00:00"
+  },
+  {
+   "number": "90609",
+   "latenessSec": 140,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:17:01+00:00"
+  },
+  {
+   "number": "90684",
+   "latenessSec": 76,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:12:52+00:00"
+  },
+  {
+   "number": "90694",
+   "latenessSec": 52,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:29:11+00:00"
+  },
+  {
+   "number": "20924",
+   "latenessSec": 152,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:35:05+00:00"
+  },
+  {
+   "number": "22634",
+   "latenessSec": 813,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:24:04+00:00"
+  },
+  {
+   "number": "90633",
+   "latenessSec": 61,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:28:44+00:00"
+  },
+  {
+   "number": "90696",
+   "latenessSec": 123,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:12:22+00:00"
+  },
+  {
+   "number": "93026",
+   "latenessSec": 12,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:32:50+00:00"
+  },
+  {
+   "number": "61007",
+   "latenessSec": 66,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:09:03+00:00"
+  },
+  {
+   "number": "90702",
+   "latenessSec": 129,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:09:42+00:00"
+  },
+  {
+   "number": "90641",
+   "latenessSec": 86,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:36:08+00:00"
+  },
+  {
+   "number": "92031",
+   "latenessSec": 5,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:35:58+00:00"
+  },
+  {
+   "number": "20668",
+   "latenessSec": 74,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:09:34+00:00"
+  },
+  {
+   "number": "20920",
+   "latenessSec": 140,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:27:38+00:00"
+  },
+  {
+   "number": "90647",
+   "latenessSec": 94,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:28:04+00:00"
+  },
+  {
+   "number": "90710",
+   "latenessSec": 44,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:12:01+00:00"
+  },
+  {
+   "number": "90714",
+   "latenessSec": 115,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:31:01+00:00"
+  },
+  {
+   "number": "90718",
+   "latenessSec": 60,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:10:03+00:00"
+  },
+  {
+   "number": "90663",
+   "latenessSec": 51,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:16:50+00:00"
+  },
+  {
+   "number": "94007",
+   "latenessSec": 86,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:34:40+00:00"
+  },
+  {
+   "number": "90726",
+   "latenessSec": 35,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:16:49+00:00"
+  },
+  {
+   "number": "90651",
+   "latenessSec": 72,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:35:57+00:00"
+  },
+  {
+   "number": "90677",
+   "latenessSec": 536,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:28:01+00:00"
+  },
+  {
+   "number": "90738",
+   "latenessSec": 95,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:34:50+00:00"
+  },
+  {
+   "number": "92038",
+   "latenessSec": 49,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:36:20+00:00"
+  },
+  {
+   "number": "90742",
+   "latenessSec": 73,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:36:12+00:00"
+  },
+  {
+   "number": "93031",
+   "latenessSec": 28,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:25:02+00:00"
+  },
+  {
+   "number": "90687",
+   "latenessSec": 68,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:14:13+00:00"
+  },
+  {
+   "number": "90748",
+   "latenessSec": 45,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:11:21+00:00"
+  },
+  {
+   "number": "90693",
+   "latenessSec": 17,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:23:48+00:00"
+  },
+  {
+   "number": "94008",
+   "latenessSec": 33,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:36:30+00:00"
+  },
+  {
+   "number": "90683",
+   "latenessSec": 148,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:28:27+00:00"
+  },
+  {
+   "number": "90766",
+   "latenessSec": 203,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:13:42+00:00"
+  },
+  {
+   "number": "92033",
+   "latenessSec": 147,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:21:58+00:00"
+  },
+  {
+   "number": "90772",
+   "latenessSec": 86,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:09:44+00:00"
+  },
+  {
+   "number": "90778",
+   "latenessSec": 101,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:14:36+00:00"
+  },
+  {
+   "number": "90711",
+   "latenessSec": 8,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:27:09+00:00"
+  },
+  {
+   "number": "93028",
+   "latenessSec": 331,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:33:15+00:00"
+  },
+  {
+   "number": "90790",
+   "latenessSec": 235,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:36:30+00:00"
+  },
+  {
+   "number": "90701",
+   "latenessSec": 69,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:09:58+00:00"
+  },
+  {
+   "number": "90796",
+   "latenessSec": 62,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:19:27+00:00"
+  },
+  {
+   "number": "90709",
+   "latenessSec": 49,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:33:07+00:00"
+  },
+  {
+   "number": "90731",
+   "latenessSec": 203,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:33:01+00:00"
+  },
+  {
+   "number": "90715",
+   "latenessSec": 378,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:11:11+00:00"
+  },
+  {
+   "number": "90806",
+   "latenessSec": 60,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:09:01+00:00"
+  },
+  {
+   "number": "90808",
+   "latenessSec": 18,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:31:52+00:00"
+  },
+  {
+   "number": "92035",
+   "latenessSec": 85,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:19:41+00:00"
+  },
+  {
+   "number": "92040",
+   "latenessSec": 258,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:33:07+00:00"
+  },
+  {
+   "number": "90735",
+   "latenessSec": 74,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:20:14+00:00"
+  },
+  {
+   "number": "92037",
+   "latenessSec": 71,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:31:33+00:00"
+  },
+  {
+   "number": "90820",
+   "latenessSec": 86,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:08:38+00:00"
+  },
+  {
+   "number": "90822",
+   "latenessSec": 231,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:11:13+00:00"
+  },
+  {
+   "number": "90757",
+   "latenessSec": 74,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:20:24+00:00"
+  },
+  {
+   "number": "90834",
+   "latenessSec": 173,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:20:54+00:00"
+  },
+  {
+   "number": "90844",
+   "latenessSec": 97,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:27:14+00:00"
+  },
+  {
+   "number": "92069",
+   "latenessSec": 83,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:22:23+00:00"
+  },
+  {
+   "number": "92070",
+   "latenessSec": 56,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:16:41+00:00"
+  },
+  {
+   "number": "90846",
+   "latenessSec": 103,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:12:20+00:00"
+  },
+  {
+   "number": "90751",
+   "latenessSec": 109,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:19:49+00:00"
+  },
+  {
+   "number": "90765",
+   "latenessSec": 38,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:33:13+00:00"
+  },
+  {
+   "number": "92042",
+   "latenessSec": 30,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:35:40+00:00"
+  },
+  {
+   "number": "90775",
+   "latenessSec": 46,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:28:55+00:00"
+  },
+  {
+   "number": "90807",
+   "latenessSec": 95,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:20:22+00:00"
+  },
+  {
+   "number": "90769",
+   "latenessSec": 148,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:20:08+00:00"
+  },
+  {
+   "number": "92044",
+   "latenessSec": 29,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:35:44+00:00"
+  },
+  {
+   "number": "90789",
+   "latenessSec": 59,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:27:38+00:00"
+  },
+  {
+   "number": "90819",
+   "latenessSec": 102,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:32:49+00:00"
+  },
+  {
+   "number": "90876",
+   "latenessSec": 472,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:35:51+00:00"
+  },
+  {
+   "number": "90940",
+   "latenessSec": 68,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:25:01+00:00"
+  },
+  {
+   "number": "90791",
+   "latenessSec": 9,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:11:18+00:00"
+  },
+  {
+   "number": "90821",
+   "latenessSec": 99,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:33:00+00:00"
+  },
+  {
+   "number": "92072",
+   "latenessSec": 80,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:18:21+00:00"
+  },
+  {
+   "number": "90785",
+   "latenessSec": 218,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:20:19+00:00"
+  },
+  {
+   "number": "90815",
+   "latenessSec": 5,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:09:57+00:00"
+  },
+  {
+   "number": "90886",
+   "latenessSec": 55,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:26:12+00:00"
+  },
+  {
+   "number": "92039",
+   "latenessSec": 104,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:17:08+00:00"
+  },
+  {
+   "number": "90890",
+   "latenessSec": 99,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:13:12+00:00"
+  },
+  {
+   "number": "90900",
+   "latenessSec": 57,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:24:49+00:00"
+  },
+  {
+   "number": "90803",
+   "latenessSec": 13,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:17:28+00:00"
+  },
+  {
+   "number": "90908",
+   "latenessSec": 108,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:17:01+00:00"
+  },
+  {
+   "number": "90914",
+   "latenessSec": 116,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:12:46+00:00"
+  },
+  {
+   "number": "92071",
+   "latenessSec": 58,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:32:21+00:00"
+  },
+  {
+   "number": "90916",
+   "latenessSec": 72,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:30:53+00:00"
+  },
+  {
+   "number": "92041",
+   "latenessSec": 38,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:23:18+00:00"
+  },
+  {
+   "number": "90926",
+   "latenessSec": 49,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:07:36+00:00"
+  },
+  {
+   "number": "93035",
+   "latenessSec": 375,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:18:15+00:00"
+  },
+  {
+   "number": "92046",
+   "latenessSec": 79,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:26:41+00:00"
+  },
+  {
+   "number": "90863",
+   "latenessSec": 134,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:14:19+00:00"
+  },
+  {
+   "number": "90934",
+   "latenessSec": 312,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:16:34+00:00"
+  },
+  {
+   "number": "90839",
+   "latenessSec": 115,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:18:21+00:00"
+  },
+  {
+   "number": "93034",
+   "latenessSec": 113,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:11:04+00:00"
+  },
+  {
+   "number": "90881",
+   "latenessSec": 25,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:26:34+00:00"
+  },
+  {
+   "number": "90948",
+   "latenessSec": 67,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:27:34+00:00"
+  },
+  {
+   "number": "92074",
+   "latenessSec": 81,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:23:55+00:00"
+  },
+  {
+   "number": "90879",
+   "latenessSec": 104,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:25:34+00:00"
+  },
+  {
+   "number": "92048",
+   "latenessSec": 311,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:30:30+00:00"
+  },
+  {
+   "number": "90873",
+   "latenessSec": 79,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:32:42+00:00"
+  },
+  {
+   "number": "92043",
+   "latenessSec": 89,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:29:07+00:00"
+  },
+  {
+   "number": "90897",
+   "latenessSec": 109,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:15:37+00:00"
+  },
+  {
+   "number": "90974",
+   "latenessSec": 12,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:12:54+00:00"
+  },
+  {
+   "number": "90885",
+   "latenessSec": 82,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:37:13+00:00"
+  },
+  {
+   "number": "90978",
+   "latenessSec": 691,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:21:06+00:00"
+  },
+  {
+   "number": "91048",
+   "latenessSec": 91,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:26:26+00:00"
+  },
+  {
+   "number": "91054",
+   "latenessSec": 7,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:15:08+00:00"
+  },
+  {
+   "number": "90913",
+   "latenessSec": 64,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:31:25+00:00"
+  },
+  {
+   "number": "90988",
+   "latenessSec": 101,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:08:51+00:00"
+  },
+  {
+   "number": "90915",
+   "latenessSec": 59,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:07:28+00:00"
+  },
+  {
+   "number": "90994",
+   "latenessSec": 36,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:25:57+00:00"
+  },
+  {
+   "number": "92073",
+   "latenessSec": 119,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:32:49+00:00"
+  },
+  {
+   "number": "90929",
+   "latenessSec": 142,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:26:06+00:00"
+  },
+  {
+   "number": "90998",
+   "latenessSec": 55,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:12:52+00:00"
+  },
+  {
+   "number": "90937",
+   "latenessSec": 88,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:18:01+00:00"
+  },
+  {
+   "number": "92050",
+   "latenessSec": 23,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:09:10+00:00"
+  },
+  {
+   "number": "91004",
+   "latenessSec": 39,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:14:33+00:00"
+  },
+  {
+   "number": "90943",
+   "latenessSec": 118,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:26:21+00:00"
+  },
+  {
+   "number": "90933",
+   "latenessSec": 57,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:11:40+00:00"
+  },
+  {
+   "number": "91014",
+   "latenessSec": 40,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:28:28+00:00"
+  },
+  {
+   "number": "93036",
+   "latenessSec": 83,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:14:36+00:00"
+  },
+  {
+   "number": "90949",
+   "latenessSec": 37,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:13:58+00:00"
+  },
+  {
+   "number": "91020",
+   "latenessSec": 107,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:13:50+00:00"
+  },
+  {
+   "number": "92045",
+   "latenessSec": 110,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:24:51+00:00"
+  },
+  {
+   "number": "91032",
+   "latenessSec": 26,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:21:04+00:00"
+  },
+  {
+   "number": "90965",
+   "latenessSec": 90,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:23:12+00:00"
+  },
+  {
+   "number": "91034",
+   "latenessSec": 397,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:19:27+00:00"
+  },
+  {
+   "number": "90981",
+   "latenessSec": 84,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:18:08+00:00"
+  },
+  {
+   "number": "91042",
+   "latenessSec": 99,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:17:51+00:00"
+  },
+  {
+   "number": "90967",
+   "latenessSec": 20,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:33:25+00:00"
+  },
+  {
+   "number": "91126",
+   "latenessSec": 86,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:34:17+00:00"
+  },
+  {
+   "number": "90993",
+   "latenessSec": 138,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:19:52+00:00"
+  },
+  {
+   "number": "90973",
+   "latenessSec": 68,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:14:26+00:00"
+  },
+  {
+   "number": "92075",
+   "latenessSec": 231,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:11:56+00:00"
+  },
+  {
+   "number": "94011",
+   "latenessSec": 9,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:25:38+00:00"
+  },
+  {
+   "number": "93038",
+   "latenessSec": 156,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:21:17+00:00"
+  },
+  {
+   "number": "91015",
+   "latenessSec": 49,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:11:15+00:00"
+  },
+  {
+   "number": "91058",
+   "latenessSec": 88,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:24:37+00:00"
+  },
+  {
+   "number": "90997",
+   "latenessSec": 50,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:24:34+00:00"
+  },
+  {
+   "number": "92049",
+   "latenessSec": 116,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:15:05+00:00"
+  },
+  {
+   "number": "91066",
+   "latenessSec": 128,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:08:54+00:00"
+  },
+  {
+   "number": "91005",
+   "latenessSec": 3,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:21:35+00:00"
+  },
+  {
+   "number": "91070",
+   "latenessSec": 65,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:09:17+00:00"
+  },
+  {
+   "number": "92051",
+   "latenessSec": 55,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:27:59+00:00"
+  },
+  {
+   "number": "93041",
+   "latenessSec": 105,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:36:18+00:00"
+  },
+  {
+   "number": "91035",
+   "latenessSec": 98,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:29:11+00:00"
+  },
+  {
+   "number": "91080",
+   "latenessSec": 12,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:22:09+00:00"
+  },
+  {
+   "number": "94012",
+   "latenessSec": 84,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:29:02+00:00"
+  },
+  {
+   "number": "91045",
+   "latenessSec": 127,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:11:39+00:00"
+  },
+  {
+   "number": "91053",
+   "latenessSec": 51,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:29:24+00:00"
+  },
+  {
+   "number": "91088",
+   "latenessSec": 223,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:29:18+00:00"
+  },
+  {
+   "number": "91047",
+   "latenessSec": 17,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:23:17+00:00"
+  },
+  {
+   "number": "91085",
+   "latenessSec": 7,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:16:01+00:00"
+  },
+  {
+   "number": "91067",
+   "latenessSec": 67,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:25:38+00:00"
+  },
+  {
+   "number": "91094",
+   "latenessSec": 388,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:13:37+00:00"
+  },
+  {
+   "number": "91049",
+   "latenessSec": 18,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:31:07+00:00"
+  },
+  {
+   "number": "92054",
+   "latenessSec": 120,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:08:07+00:00"
+  },
+  {
+   "number": "91102",
+   "latenessSec": 1500,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:24:08+00:00"
+  },
+  {
+   "number": "91077",
+   "latenessSec": 24,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:22:02+00:00"
+  },
+  {
+   "number": "91119",
+   "latenessSec": 89,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:07:34+00:00"
+  },
+  {
+   "number": "91104",
+   "latenessSec": 97,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:21:02+00:00"
+  },
+  {
+   "number": "91106",
+   "latenessSec": 109,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:36:52+00:00"
+  },
+  {
+   "number": "91071",
+   "latenessSec": 23,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:11:54+00:00"
+  },
+  {
+   "number": "91111",
+   "latenessSec": 144,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:23:51+00:00"
+  },
+  {
+   "number": "91186",
+   "latenessSec": 196,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:21:29+00:00"
+  },
+  {
+   "number": "91112",
+   "latenessSec": 43,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:25:07+00:00"
+  },
+  {
+   "number": "91075",
+   "latenessSec": 60,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:09:59+00:00"
+  },
+  {
+   "number": "91117",
+   "latenessSec": 118,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:24:44+00:00"
+  },
+  {
+   "number": "91095",
+   "latenessSec": 5,
+   "lastStation": "BYR",
+   "observedAt": "2026-08-20T16:12:05+00:00"
+  },
+  {
+   "number": "91137",
+   "latenessSec": 31,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:27:19+00:00"
+  },
+  {
+   "number": "91118",
+   "latenessSec": 40,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:17:57+00:00"
+  },
+  {
+   "number": "92077",
+   "latenessSec": 148,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:28:36+00:00"
+  },
+  {
+   "number": "91122",
+   "latenessSec": 141,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:21:40+00:00"
+  },
+  {
+   "number": "91202",
+   "latenessSec": 95,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:32:37+00:00"
+  },
+  {
+   "number": "91093",
+   "latenessSec": 125,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:19:30+00:00"
+  },
+  {
+   "number": "91135",
+   "latenessSec": 102,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:11:18+00:00"
+  },
+  {
+   "number": "91132",
+   "latenessSec": 16,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:35:04+00:00"
+  },
+  {
+   "number": "91216",
+   "latenessSec": 100,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:14:53+00:00"
+  },
+  {
+   "number": "92053",
+   "latenessSec": 1,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:36:59+00:00"
+  },
+  {
+   "number": "91228",
+   "latenessSec": 87,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:36:48+00:00"
+  },
+  {
+   "number": "92078",
+   "latenessSec": 84,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:09:52+00:00"
+  },
+  {
+   "number": "91230",
+   "latenessSec": 154,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:09:34+00:00"
+  },
+  {
+   "number": "91153",
+   "latenessSec": 95,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:24:39+00:00"
+  },
+  {
+   "number": "91156",
+   "latenessSec": 139,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:27:09+00:00"
+  },
+  {
+   "number": "91155",
+   "latenessSec": 102,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:34:12+00:00"
+  },
+  {
+   "number": "91240",
+   "latenessSec": 45,
+   "lastStation": "BOR",
+   "observedAt": "2026-08-20T16:35:29+00:00"
+  },
+  {
+   "number": "91167",
+   "latenessSec": 84,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:20:20+00:00"
+  },
+  {
+   "number": "91195",
+   "latenessSec": 193,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:19:22+00:00"
+  },
+  {
+   "number": "91242",
+   "latenessSec": 253,
+   "lastStation": "VTN",
+   "observedAt": "2026-08-20T16:35:48+00:00"
+  },
+  {
+   "number": "91203",
+   "latenessSec": 202,
+   "lastStation": "NIG",
+   "observedAt": "2026-08-20T16:31:16+00:00"
+  },
+  {
+   "number": "91169",
+   "latenessSec": 226,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:34:46+00:00"
+  },
+  {
+   "number": "91177",
+   "latenessSec": 68,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:14:17+00:00"
+  },
+  {
+   "number": "91252",
+   "latenessSec": 65,
+   "lastStation": "NSP",
+   "observedAt": "2026-08-20T16:10:25+00:00"
+  },
+  {
+   "number": "91183",
+   "latenessSec": 254,
+   "lastStation": "MIRA",
+   "observedAt": "2026-08-20T16:35:34+00:00"
+  },
+  {
+   "number": "91256",
+   "latenessSec": 28,
+   "lastStation": "VR",
+   "observedAt": "2026-08-20T16:25:46+00:00"
+  },
+  {
+   "number": "91227",
+   "latenessSec": 74,
+   "lastStation": "BVI",
+   "observedAt": "2026-08-20T16:10:59+00:00"
+  }
+ ]
+}

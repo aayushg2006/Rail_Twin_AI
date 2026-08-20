@@ -1,75 +1,262 @@
+import { useMemo } from "react";
+import type { KPISet, TrendPoint } from "@/domain/types";
 import { useTwin } from "@/twin/store";
-import { Metric, Panel, PanelHead, Row } from "./primitives";
+import { clockShort, countdown, minutes } from "@/twin/format";
+import { Metric, Panel, PanelHead, Tag } from "./primitives";
 
+/**
+ * RECORD — did the AI actually help? (#18)
+ *
+ * Every number here is measured. Two SHADOW TWINS run the same timetable and the
+ * same disruptions on the same seed: one takes no controller action at all, the
+ * other applies the traditional "higher class always goes first" rule. Delay
+ * avoided is the live twin measured against them, continuously.
+ *
+ * The previous version reported the difference between the best option the
+ * optimiser generated and the WORST one it generated for itself, which is not a
+ * counterfactual, and every accepted decision recorded exactly 0.0 min avoided
+ * because of a sign error in the frontend.
+ */
 export function PerformancePanel({ className }: { className?: string }) {
-  const { kpis, baselineKpis, decisions, delayAvoidedSec } = useTwin();
-  const accepted = decisions.filter((d) => d.outcome !== "REJECTED");
-  // Prefer the backend counterfactual (delay a naive controller would have
-  // added vs. the AI's choices); fall back to the baseline−current difference.
-  const saved =
-    delayAvoidedSec ??
-    (baselineKpis ? Math.max(0, baselineKpis.totalDelaySec - kpis.totalDelaySec) : 0);
+  const { bundle } = useTwin();
+  const avoided = bundle?.delayAvoided;
+  const baselines = bundle?.baselines;
+  const trend = bundle?.trend ?? [];
+  const plan = bundle?.globalPlan;
 
-  const rows: [string, number, number][] = baselineKpis
-    ? [
-        ["Total delay (min)", baselineKpis.totalDelaySec / 60, kpis.totalDelaySec / 60],
-        ["Average delay (min)", baselineKpis.averageDelaySec / 60, kpis.averageDelaySec / 60],
-        ["Passenger delay (min)", baselineKpis.passengerDelaySec / 60, kpis.passengerDelaySec / 60],
-        ["Freight delay (min)", baselineKpis.freightDelaySec / 60, kpis.freightDelaySec / 60],
-        ["Active conflicts", baselineKpis.activeConflicts, kpis.activeConflicts],
-        ["On time (%)", baselineKpis.onTimePercent, kpis.onTimePercent],
-      ]
-    : [];
+  if (!bundle || !baselines) {
+    return (
+      <Panel className={className}>
+        <PanelHead title="Performance" meta="waiting for the twin" tone="dim" />
+      </Panel>
+    );
+  }
+
+  const savedMin = (avoided?.vsDoNothingSec ?? 0) / 60;
+  const savedVsRule = (avoided?.vsPriorityRuleSec ?? 0) / 60;
 
   return (
     <Panel className={className}>
-      <PanelHead title="Performance — baseline vs current" meta={`${decisions.length} decisions recorded`} />
+      <PanelHead
+        title="Performance"
+        meta="AI vs no action vs priority rule — measured, not estimated"
+        tone={savedMin > 0 ? "ok" : "neutral"}
+        right={
+          plan ? (
+            <Tag tone={plan.solverStatus === "OPTIMAL" ? "ok" : "warning"}>
+              {plan.solver} {plan.solverStatus.toLowerCase()}
+              {plan.optimalityGap !== null && ` · gap ${(plan.optimalityGap * 100).toFixed(1)}%`}
+            </Tag>
+          ) : null
+        }
+      />
+
       <div className="grid grid-cols-2 gap-4 border-b border-border px-3 py-3 sm:grid-cols-4">
-        <Metric label="Decisions applied" value={String(accepted.length)} />
-        <Metric label="Rejected" value={String(decisions.length - accepted.length)} tone="dim" />
-        <Metric label="Delay avoided" value={`${(saved / 60).toFixed(1)}`} unit="min" tone="ok" />
+        <Metric label="Decisions applied" value={String(avoided?.decisionsApplied ?? 0)} />
         <Metric
-          label="Conflicts now"
-          value={String(kpis.activeConflicts)}
-          tone={kpis.activeConflicts ? "critical" : "ok"}
+          label="Rejected"
+          value={String(avoided?.decisionsRejected ?? 0)}
+          tone="dim"
+        />
+        <Metric
+          label="Delay avoided"
+          value={avoided?.settling ? "settling" : savedMin.toFixed(1)}
+          unit={avoided?.settling ? "hold still being served" : "min vs no action"}
+          tone={avoided?.settling ? "warning" : savedMin > 0.05 ? "ok" : "dim"}
+        />
+        <Metric
+          label="Passenger-minutes saved"
+          value={(avoided?.vsDoNothingPassengerMinutes ?? 0).toFixed(0)}
+          tone={(avoided?.vsDoNothingPassengerMinutes ?? 0) > 0 ? "ok" : "dim"}
         />
       </div>
-      <div className="px-3 py-2">
-        {rows.length === 0 ? (
-          <p className="text-[12px] text-muted-foreground">Baseline capture pending.</p>
-        ) : (
-          rows.map(([label, base, now]) => {
-            const delta = now - base;
-            return (
-              <Row
-                key={label}
-                label={label}
-                value={`${base.toFixed(1)} → ${now.toFixed(1)}  (${delta >= 0 ? "+" : ""}${delta.toFixed(1)})`}
-                tone={delta > 0.05 ? "critical" : delta < -0.05 ? "ok" : "neutral"}
-              />
-            );
-          })
-        )}
-      </div>
+
+      <TrendChart trend={trend} />
+
+      <ComparisonTable ai={baselines.ai} doNothing={baselines.doNothing} rule={baselines.priorityRule} />
+
+      <p className="border-t border-border px-3 py-2 text-[10.5px] text-faint">
+        Both baselines are full simulations on the same seed and the same disruptions;
+        neither ever receives a controller decision. Positive numbers mean the AI-assisted
+        twin is ahead.{" "}
+        {avoided?.settling
+          ? `A hold costs its time the moment it is issued and only repays it when the conflict it prevents would have bitten — ${Math.round((avoided.holdInFlightSec ?? 0))}s of hold is still being served, so the comparison has not settled yet.`
+          : ""} {savedVsRule >= 0 ? "" : "A negative figure against the priority rule means the rigid rule happened to do better in this window — it is reported as measured."}
+      </p>
     </Panel>
   );
 }
 
+/** Total lateness over time, three tracks. Pure SVG — no chart library, no
+ *  invented smoothing, one point per shadow refresh. */
+function TrendChart({ trend }: { trend: TrendPoint[] }) {
+  const W = 720;
+  const H = 150;
+  const PAD = { l: 44, r: 12, t: 12, b: 20 };
+
+  const series = useMemo(() => {
+    if (trend.length < 2) return null;
+    const max = Math.max(
+      1,
+      ...trend.flatMap((p) => [p.ai, p.doNothing, p.priorityRule]),
+    );
+    const x = (i: number) =>
+      PAD.l + (i / (trend.length - 1)) * (W - PAD.l - PAD.r);
+    const y = (v: number) => H - PAD.b - (v / max) * (H - PAD.t - PAD.b);
+    const line = (pick: (p: TrendPoint) => number) =>
+      trend.map((p, i) => `${x(i).toFixed(1)},${y(pick(p)).toFixed(1)}`).join(" ");
+    return {
+      max,
+      ai: line((p) => p.ai),
+      doNothing: line((p) => p.doNothing),
+      rule: line((p) => p.priorityRule),
+      first: trend[0],
+      last: trend[trend.length - 1],
+    };
+  }, [trend]);
+
+  if (!series) {
+    return (
+      <div className="border-b border-border px-3 py-6 text-center text-[11.5px] text-muted-foreground">
+        Collecting measurements — the comparison appears once the shadow twins have
+        run for a few seconds.
+      </div>
+    );
+  }
+
+  return (
+    <div className="border-b border-border px-3 py-2">
+      <div className="mb-1 flex items-center gap-4">
+        <span className="label-xs">Total lateness across the section</span>
+        <Key colour="var(--ok)" label="AI-assisted" />
+        <Key colour="var(--critical)" label="No action" />
+        <Key colour="var(--warning)" label="Priority rule" />
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="h-[150px] w-full" role="img"
+           aria-label="Total lateness over time, AI versus baselines">
+        <line x1={PAD.l} y1={H - PAD.b} x2={W - PAD.r} y2={H - PAD.b}
+              stroke="var(--border)" strokeWidth={1} />
+        <line x1={PAD.l} y1={PAD.t} x2={PAD.l} y2={H - PAD.b}
+              stroke="var(--border)" strokeWidth={1} />
+        <text x={4} y={PAD.t + 8} fontSize={9} fontFamily="var(--font-mono)" fill="var(--faint)">
+          {(series.max / 60).toFixed(0)}m
+        </text>
+        <text x={4} y={H - PAD.b} fontSize={9} fontFamily="var(--font-mono)" fill="var(--faint)">
+          0
+        </text>
+        <polyline points={series.doNothing} fill="none" stroke="var(--critical)" strokeWidth={1.6} />
+        <polyline points={series.rule} fill="none" stroke="var(--warning)" strokeWidth={1.6}
+                  strokeDasharray="5 4" />
+        <polyline points={series.ai} fill="none" stroke="var(--ok)" strokeWidth={2.2} />
+      </svg>
+    </div>
+  );
+}
+
+function Key({ colour, label }: { colour: string; label: string }) {
+  return (
+    <span className="flex items-center gap-1.5">
+      <span className="h-[2px] w-4" style={{ background: colour }} />
+      <span className="label-xs">{label}</span>
+    </span>
+  );
+}
+
+/**
+ * Metric order as requested (#19): passengers, freight, total, average, active
+ * conflicts, on time.
+ */
+function ComparisonTable({
+  ai,
+  doNothing,
+  rule,
+}: {
+  ai: KPISet;
+  doNothing: KPISet;
+  rule: KPISet;
+}) {
+  const rows: [string, (k: KPISet) => string, (k: KPISet) => number][] = [
+    ["Passenger delay", (k) => minutes(k.passengerDelaySec), (k) => k.passengerDelaySec],
+    ["Freight delay", (k) => minutes(k.freightDelaySec), (k) => k.freightDelaySec],
+    ["Total lateness", (k) => minutes(k.totalLatenessSec), (k) => k.totalLatenessSec],
+    ["Average lateness", (k) => minutes(k.averageLatenessSec), (k) => k.averageLatenessSec],
+    ["Active conflicts", (k) => String(k.activeConflicts), (k) => k.activeConflicts],
+    [
+      "On time",
+      (k) => (k.onTimePercent === null ? "not yet measured" : `${k.onTimePercent.toFixed(0)}%`),
+      (k) => -(k.onTimePercent ?? 0),
+    ],
+  ];
+
+  return (
+    <div className="min-h-0 overflow-auto">
+      <table className="w-full border-collapse text-left">
+        <thead className="sticky top-0 bg-shell">
+          <tr className="label-xs">
+            <th className="border-b border-border px-3 py-1 font-medium">Metric</th>
+            <th className="border-b border-border px-3 py-1 font-medium">AI-assisted</th>
+            <th className="border-b border-border px-3 py-1 font-medium">No action</th>
+            <th className="border-b border-border px-3 py-1 font-medium">Priority rule</th>
+            <th className="border-b border-border px-3 py-1 font-medium">Best</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(([label, fmt, score]) => {
+            const scores: [string, number][] = [
+              ["AI", score(ai)],
+              ["None", score(doNothing)],
+              ["Rule", score(rule)],
+            ];
+            const best = [...scores].sort((a, b) => a[1] - b[1])[0]?.[0] ?? "AI";
+            return (
+              <tr key={label} className="border-b border-border/50">
+                <td className="px-3 py-1.5 text-[12px]">{label}</td>
+                <td className={`num px-3 py-1.5 text-[11.5px] ${best === "AI" ? "text-ok" : ""}`}>
+                  {fmt(ai)}
+                </td>
+                <td className="num px-3 py-1.5 text-[11.5px] text-muted-foreground">
+                  {fmt(doNothing)}
+                </td>
+                <td className="num px-3 py-1.5 text-[11.5px] text-muted-foreground">
+                  {fmt(rule)}
+                </td>
+                <td className="px-3 py-1.5">
+                  <Tag tone={best === "AI" ? "ok" : "dim"}>
+                    {best === "AI" ? "AI" : best === "None" ? "No action" : "Priority rule"}
+                  </Tag>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** The audit trail. Rejections are first-class records, with the reason (#18). */
 export function DecisionLogTable({ className }: { className?: string }) {
-  const { decisions } = useTwin();
+  const { decisions, bundle } = useTwin();
+  const epoch = bundle?.simState.epochStartMs ?? 0;
+
   return (
     <Panel className={className}>
-      <PanelHead title="Decision record" meta="append-only audit trail" />
+      <PanelHead
+        title="Decision record"
+        meta={`${decisions.length} recorded · append-only`}
+        tone={decisions.length ? "neutral" : "dim"}
+      />
       <div className="min-h-0 overflow-auto">
         {decisions.length === 0 ? (
           <p className="px-3 py-4 text-[12px] text-muted-foreground">
-            No controller decisions recorded in this session.
+            No controller decisions yet. Accept, modify or reject a recommendation and it
+            is recorded here — including what the twin measured before and after.
           </p>
         ) : (
           <table className="w-full border-collapse text-left">
             <thead className="sticky top-0 bg-shell">
               <tr className="label-xs">
-                {["Time", "Conflict", "Option", "Action", "Outcome", "Network", "Delay avoided", "Note"].map((h) => (
+                {["Time", "Where", "Command", "Outcome", "Effect", "Note"].map((h) => (
                   <th key={h} className="border-b border-border px-2 py-1 font-medium">
                     {h}
                   </th>
@@ -77,40 +264,66 @@ export function DecisionLogTable({ className }: { className?: string }) {
               </tr>
             </thead>
             <tbody>
-              {decisions.map((d) => (
-                <tr key={d.id} className="border-b border-border/50">
-                  <td className="num px-2 py-1 text-[11px]">{d.wallClock}</td>
-                  <td className="num px-2 py-1 text-[11px]">{d.conflictLabel}</td>
-                  <td className="px-2 py-1 text-[11.5px]">{d.optionTitle}</td>
-                  <td className="num px-2 py-1 text-[11px]">
-                    {d.action.kind}
-                    {d.action.holdSec ? ` ${d.action.holdSec}s` : ""}
-                    {d.action.speedKmh ? ` ${d.action.speedKmh}km/h` : ""}
-                  </td>
-                  <td
-                    className={`num px-2 py-1 text-[11px] ${
-                      d.outcome === "ACCEPTED"
-                        ? "text-ok"
-                        : d.outcome === "REJECTED"
-                          ? "text-critical"
-                          : "text-warning"
-                    }`}
-                  >
-                    {d.outcome}
-                  </td>
-                  <td className="num px-2 py-1 text-[11px]">
-                    {(d.networkDelaySec / 60).toFixed(1)}′
-                  </td>
-                  <td className={`num px-2 py-1 text-[11px] ${d.delayAvoidedSec < 0 ? "text-critical" : d.delayAvoidedSec > 0 ? "text-ok" : "text-faint"}`}>
-                    {(d.delayAvoidedSec / 60).toFixed(1)}′
-                  </td>
-                  <td className="px-2 py-1 text-[11px] text-muted-foreground">{d.note || "—"}</td>
-                </tr>
-              ))}
+              {[...decisions].reverse().map((d) => {
+                const rejected = d.outcome === "REJECTED";
+                const delta =
+                  d.latenessBeforeSec !== undefined && d.latenessAfterSec !== undefined
+                    ? d.latenessAfterSec - d.latenessBeforeSec
+                    : null;
+                return (
+                  <tr key={d.id} className="border-b border-border/50 align-top">
+                    <td className="num px-2 py-1.5 text-[11px]">
+                      {clockShort(epoch + d.simTimeSec * 1000)}
+                    </td>
+                    <td className="px-2 py-1.5 text-[11.5px]">
+                      {d.where || "—"}
+                      {d.trains.length > 0 && (
+                        <span className="block text-[10px] text-faint">
+                          {d.trains.map((t) => t.split("-")[1] ?? t).join(" · ")}
+                        </span>
+                      )}
+                    </td>
+                    <td className="num px-2 py-1.5 text-[11px]">
+                      {commandOf(d.action)}
+                    </td>
+                    <td className="px-2 py-1.5">
+                      <Tag tone={rejected ? "critical" : d.outcome === "MODIFIED" ? "warning" : "ok"}>
+                        {d.outcome}
+                      </Tag>
+                      {d.reason && (
+                        <span className="block text-[10px] text-critical">{d.reason}</span>
+                      )}
+                    </td>
+                    <td className="num px-2 py-1.5 text-[11px]">
+                      {rejected ? (
+                        <span className="text-faint">not applied</span>
+                      ) : delta === null ? (
+                        <span className="text-faint">—</span>
+                      ) : (
+                        <span className={delta <= 0 ? "text-ok" : "text-warning"}>
+                          {delta <= 0 ? "" : "+"}
+                          {(delta / 60).toFixed(1)} min
+                          {d.conflictCleared ? " · cleared" : ""}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-2 py-1.5 text-[11px] text-muted-foreground">
+                      {d.note || "—"}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
       </div>
     </Panel>
   );
+}
+
+function commandOf(a: { kind: string; holdSec?: number; speedKmh?: number; platformId?: string }) {
+  if (a.kind === "HOLD") return `Hold ${Math.round(a.holdSec ?? 0)}s`;
+  if (a.kind === "SPEED_REGULATION") return `Regulate ${Math.round(a.speedKmh ?? 0)} km/h`;
+  if (a.kind === "PLATFORM_REASSIGNMENT") return `Re-platform ${a.platformId ?? ""}`.trim();
+  return a.kind.replace(/_/g, " ").toLowerCase();
 }

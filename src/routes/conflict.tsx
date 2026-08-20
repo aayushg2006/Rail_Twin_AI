@@ -2,9 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { TwinMap } from "@/components/twin/TwinMap";
 import { ConflictPanel } from "@/components/ops/ConflictPanel";
 import { Inspector } from "@/components/ops/Inspector";
-import { PropagationPanel } from "@/components/ops/PropagationPanel";
 import { Timeline } from "@/components/ops/Timeline";
-import { KpiBar } from "@/components/ops/KpiBar";
 
 export const Route = createFileRoute("/conflict")({
   head: () => ({
@@ -37,12 +35,10 @@ function ConflictScreen() {
         <div className="min-h-[300px] bg-map lg:min-h-[480px]">
           <TwinMap />
         </div>
-        <div className="grid min-h-0 gap-px bg-border max-lg:min-h-[70vh] lg:grid-rows-[minmax(0,1fr)_minmax(0,1fr)]">
+        <div className="flex min-h-0 flex-col max-lg:min-h-[50vh]">
           <Inspector />
-          <PropagationPanel />
         </div>
       </div>
-      <KpiBar />
     </main>
   );
 }

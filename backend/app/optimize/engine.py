@@ -109,9 +109,14 @@ class OptimizationEngine:
     # ------------------------------------------------------------ joint plan
     def solve_joint(self, state: AnalyticState, prediction: Prediction,
                     time_limit_sec: float = SOLVER_TIME_LIMIT_SEC) -> JointPlan:
-        contended = {c.resource_id for c in prediction.conflicts}
+        # Only schedule around conflicts that are actually worth intervening in.
+        worth_acting = [c for c in prediction.conflicts
+                        if c.severity == "CRITICAL"
+                        or do_nothing_cost(state, c, self.weights) > 0]
+        contended = {c.resource_id for c in worth_acting}
         if not contended:
             return JointPlan("EMPTY", "NONE", conflicts_considered=0)
+        prediction = replace_conflicts(prediction, worth_acting)
 
         # Only trains involved in contention need to be scheduled; everything
         # else is running clear and would only enlarge the model.
@@ -246,6 +251,21 @@ class OptimizationEngine:
                   if e.feasible and e.conflict_resolved and e.safety.get("passed")]
         selected = min(viable, key=lambda e: option_cost(e, self.weights)) if viable else None
 
+        # Intervening must be worth more than the conflict costs.
+        #
+        # A WARNING is a headway infringement: the following movement gets a
+        # caution and loses the shortfall, tens of seconds. "Fixing" it by
+        # re-ordering the junction can cost minutes. Without this check the
+        # optimiser confidently recommended a 236 s hold on a goods rake to
+        # avoid a 57 s infringement, and measured itself WORSE than doing
+        # nothing - which the shadow twins duly reported.
+        do_nothing = do_nothing_cost(state, conflict, self.weights)
+        if selected is not None and option_cost(selected, self.weights) >= do_nothing:
+            return OptimizationResult(
+                conflict_id=conflict.id, options=evals, selected=None,
+                objective_score=0.0, joint_plan=joint,
+                recommendation=self._monitor(conflict, selected, do_nothing))
+
         # Prefer whatever the joint plan does to this conflict's trains: it is
         # the only choice that accounts for what happens further along.
         if joint and joint.actions:
@@ -340,6 +360,29 @@ class OptimizationEngine:
         }
 
     @staticmethod
+    def _monitor(conflict: Conflict, best: OptionEval, do_nothing: float) -> dict:
+        """Every available intervention costs more than the conflict does."""
+        where = _place(conflict)
+        return {
+            "mode": "MONITORING", "status": "NO_ACTION_WORTHWHILE",
+            "conflictId": conflict.id, "optionId": None,
+            "rationale": (
+                f"Letting this run costs about {do_nothing:.0f} passenger-minutes; the "
+                f"cheapest way to clear it ({best.title.lower()}) costs more. The "
+                "interlocking will hold the second movement briefly at the signal, "
+                "which is the smaller loss."),
+            "expectedOutcome": (
+                f"{where}: the following movement is checked for roughly "
+                f"{round(max(0.0, conflict.required_separation_sec - conflict.separation_sec))} s "
+                "and then proceeds."),
+            "alternatives": [
+                {"title": best.title,
+                 "passengerMinutes": round(max(0.0, best.passenger_minutes), 1),
+                 "networkDelaySec": round(best.network_delay_sec, 1)}
+            ],
+        }
+
+    @staticmethod
     def _containment(conflict: Conflict, selected: OptionEval) -> dict:
         where = _place(conflict)
         return {
@@ -352,6 +395,33 @@ class OptimizationEngine:
             "alternatives": [],
             "costBreakdown": explain_cost(selected),
         }
+
+
+def replace_conflicts(prediction: Prediction, conflicts: list[Conflict]) -> Prediction:
+    """A view of the prediction narrowed to the conflicts worth scheduling."""
+    return Prediction(prediction.horizon_sec, conflicts, prediction.plans, prediction.paths)
+
+
+def do_nothing_cost(state: AnalyticState, conflict: Conflict,
+                    weights: ObjectiveWeights | None = None) -> float:
+    """What letting this conflict happen actually costs, in the same units as
+    `option_cost`.
+
+    The interlocking resolves an unactioned conflict by holding the SECOND
+    movement at the protecting signal until the resource is clear with headway.
+    That wait is the separation shortfall, and it falls on the follower.
+    """
+    weights = weights or settings.weights
+    shortfall = max(0.0, conflict.required_separation_sec - conflict.separation_sec)
+    if shortfall <= 0:
+        return 0.0
+    follower = conflict.train_b or conflict.train_a
+    f = fleet_by_id.get(follower)
+    if f is None:
+        return shortfall
+    if f.is_freight:
+        return weights.freight * (shortfall * f.gross_tonnes / 60.0)
+    return weights.passenger * (shortfall * f.typical_load / 60.0)
 
 
 def _place(conflict: Conflict) -> str:

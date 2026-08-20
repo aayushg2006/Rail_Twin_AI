@@ -9,49 +9,27 @@ import {
   type ReactNode,
 } from "react";
 import type {
-  CausalLink,
   Conflict,
-  CustomScenario,
-  DecisionOutcome,
+  ConnectionStatus,
   DecisionRecord,
-  DelayBreakdown,
-  KPISet,
-  MLPrediction,
   OptionOutcome,
-  Point,
-  Prediction,
+  RailNetwork,
   Recommendation,
-  GlobalPlan,
   ResolutionAction,
   ScenarioId,
-  ClockMode,
-  ConnectionStatus,
+  TrainSnapshot,
+  TwinBundle,
 } from "@/domain/types";
-import { MockTwinSource, type TwinBundle, type TwinDataSource } from "@/data/source";
-import { WebSocketTwinSource } from "@/data/wsSource";
-import {
-  applyAction,
-  computeKPIs,
-  generateOptions,
-  predict,
-  projectStateAt,
-  recommend,
-  type SimState,
-} from "./engine";
-import { clockOf } from "./format";
+import { TwinSocket } from "@/data/wsSource";
+import { createProjector, type Projector } from "./projection";
 
-export type SimSpeed = 1 | 2 | 5 | 10 | 20;
-export type ConnectionState = ConnectionStatus;
+export type SimSpeed = 1 | 2 | 5 | 10;
 
-/** Pick the authoritative source: the Python backend over WebSocket when
- *  reachable, else the in-browser deterministic mock (offline fallback). */
-function createSource(scenario: ScenarioId, epochStartMs: number): TwinDataSource {
-  if (typeof window === "undefined") return new MockTwinSource(scenario, epochStartMs);
-  const env = (import.meta as { env?: Record<string, string> }).env ?? {};
-  const url = env["VITE_BACKEND_WS_URL"] ?? `ws://${window.location.hostname}:8000/ws`;
-  if (!url) return new MockTwinSource(scenario, epochStartMs);
-  return new WebSocketTwinSource(url, scenario, epochStartMs);
-}
+export type Selection =
+  | { kind: "train"; id: string }
+  | { kind: "platform"; id: string }
+  | { kind: "conflict"; id: string }
+  | null;
 
 export interface LayerFlags {
   infrastructure: boolean;
@@ -60,96 +38,46 @@ export interface LayerFlags {
   decision: boolean;
 }
 
-/** What the contextual inspector is currently describing. */
-export type Selection =
-  | { kind: "train"; id: string }
-  | { kind: "platform"; id: string }
-  | { kind: "track"; id: string }
-  | { kind: "conflict"; id: string }
-  | null;
-
-export interface AcknowledgedDecision {
-  conflictId: string;
-  optionTitle: string;
-  outcome: DecisionOutcome;
-}
-
-function conflictKey(conflict: Conflict): string {
-  const trains = [conflict.trainA, conflict.trainB].filter(Boolean).sort().join("|");
-  return [conflict.resourceId, trains].join("|");
-}
-
 interface TwinContextValue {
-  /** Authoritative live state. */
-  sim: SimState;
-  /** State rendered on the map — live, or projected when scrubbing. */
-  view: SimState;
-  prediction: Prediction;
-  kpis: KPISet;
+  bundle: TwinBundle | null;
+  network: RailNetwork | null;
+  projector: Projector | null;
+  connection: ConnectionStatus;
+  /** Trains actually on the ground — scheduled ones never reach the map (#22). */
+  activeTrains: TrainSnapshot[];
+  conflicts: Conflict[];
+  /** True when the map is showing a projected frame rather than now. */
+  projecting: boolean;
+  selectedConflict: Conflict | null;
   options: OptionOutcome[];
   recommendation: Recommendation | null;
-  globalPlan: GlobalPlan | null;
-  selectedConflict: Conflict | null;
-  selectedTrainId: string | null;
+  decisions: DecisionRecord[];
   selection: Selection;
-  /** Non-involved network elements are de-emphasised while true. */
+  selectedTrainId: string | null;
   focusMode: boolean;
-  /** Option currently being inspected / simulated by the controller. */
+  whatIfOpen: boolean;
   previewOption: OptionOutcome | null;
-  /** Projected path of the previewed option's train, for the recommended layer. */
-  previewPath: Point[] | null;
   horizonOffset: number;
   playing: boolean;
   speed: SimSpeed;
   layers: LayerFlags;
   scenario: ScenarioId;
-  decisions: DecisionRecord[];
-  baselineKpis: KPISet | null;
-  /** Cumulative delay a naive controller would have added vs. the AI's decisions. */
-  delayAvoidedSec: number | null;
-  /** True when the current window has no active trains (advance the clock). */
-  emptyNetwork: boolean;
-  emptyNetworkReason: string | null;
-  /** Live link state to the backend brain. */
-  connection: ConnectionState;
-  /** Computed delay-dependency chain (backend), for the propagation panel. */
-  causalChain: CausalLink[];
-  /** Per-train per-cause delay breakdown (backend), for explainability. */
-  delayBuckets: Record<string, DelayBreakdown>;
-  /** ML predictions keyed by conflict id (backend). */
-  mlByConflict: Record<string, MLPrediction>;
-  /** ML predictions keyed by train id (backend). */
-  mlByTrain: Record<string, MLPrediction[]>;
-  /** The last controller response whose What-if preview was closed. */
-  acknowledgedDecision: AcknowledgedDecision | null;
-  /** Whether the direct What-if workflow is open. */
-  whatIfOpen: boolean;
-  modelStatus: {
-    optimizer: { status: string; reason: string };
-    ml: { status: string; reason: string };
-  };
-  suggestionRevision: number | null;
-  clockMode: ClockMode;
-  decisionStatus: { status: string; reason?: string } | null;
-  setPlaying: (v: boolean) => void;
-  setSpeed: (v: SimSpeed) => void;
-  setClockMode: (mode: ClockMode) => void;
-  setHorizonOffset: (v: number) => void;
+  select: (sel: Selection) => void;
   selectTrain: (id: string | null) => void;
   selectConflict: (id: string | null) => void;
-  select: (sel: Selection) => void;
   setFocusMode: (v: boolean) => void;
   setPreviewOptionId: (id: string | null) => void;
   openWhatIf: (id?: string) => void;
   closeWhatIf: () => void;
+  setHorizonOffset: (v: number) => void;
+  setPlaying: (v: boolean) => void;
+  setSpeed: (v: SimSpeed) => void;
   toggleLayer: (k: keyof LayerFlags) => void;
   loadScenario: (id: ScenarioId) => void;
-  loadCustomScenario: (scenario: CustomScenario) => void;
-  stepForward: (sec: number) => void;
-  jumpToNextEvent: () => void;
+  resetToBase: () => void;
   decide: (
     option: OptionOutcome,
-    outcome: DecisionOutcome,
+    outcome: "ACCEPTED" | "MODIFIED" | "REJECTED",
     note?: string,
     override?: ResolutionAction,
   ) => void;
@@ -157,30 +85,34 @@ interface TwinContextValue {
 
 const TwinContext = createContext<TwinContextValue | null>(null);
 
-const TICK_MS = 250;
+function backendUrls(): { ws: string; http: string } {
+  const env = (import.meta as { env?: Record<string, string> }).env ?? {};
+  const host = typeof window === "undefined" ? "localhost" : window.location.hostname;
+  const ws = env["VITE_BACKEND_WS_URL"] ?? `ws://${host}:8000/ws`;
+  return { ws, http: ws.replace(/^ws/, "http").replace(/\/ws$/, "") };
+}
 
 export function TwinProvider({ children }: { children: ReactNode }) {
-  const sourceRef = useRef<TwinDataSource | null>(null);
-  if (!sourceRef.current)
-    sourceRef.current = createSource("BASE", Date.now());
-  const source = sourceRef.current;
+  // This console renders live data that only exists in the browser. Server
+  // rendering it produces a tree the client can never match, so wait for mount
+  // rather than hydrating a placeholder and reconciling against real data.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
-  const [sim, setSim] = useState<SimState>(() => source.getState());
-  const [bundle, setBundle] = useState<TwinBundle | null>(() => source.getBundle?.() ?? null);
-  const [playing, setPlayingState] = useState(true);
-  const [speed, setSpeedState] = useState<SimSpeed>(5);
-  const [horizonOffset, setHorizonOffset] = useState(0);
+  const socketRef = useRef<TwinSocket | null>(null);
+  const [bundle, setBundle] = useState<TwinBundle | null>(null);
+  const [connection, setConnection] = useState<ConnectionStatus>("CONNECTING");
+  const [network, setNetwork] = useState<RailNetwork | null>(null);
+
+  const [selection, setSelection] = useState<Selection>(null);
   const [selectedTrainId, setSelectedTrainId] = useState<string | null>(null);
   const [selectedConflictId, setSelectedConflictId] = useState<string | null>(null);
-  const [acknowledgedDecision, setAcknowledgedDecision] = useState<AcknowledgedDecision | null>(null);
-  const [whatIfOpen, setWhatIfOpen] = useState(false);
-  const [handledConflictIds, setHandledConflictIds] = useState<Set<string>>(() => new Set());
-  const [pendingNextConflictId, setPendingNextConflictId] = useState<string | null>(null);
-  const [selection, setSelection] = useState<Selection>(null);
   const [focusMode, setFocusMode] = useState(false);
+  const [whatIfOpen, setWhatIfOpen] = useState(false);
   const [previewOptionId, setPreviewOptionId] = useState<string | null>(null);
-  const [decisions, setDecisions] = useState<DecisionRecord[]>([]);
-  const [baselineKpis, setBaselineKpis] = useState<KPISet | null>(null);
+  const [horizonOffset, setHorizonOffset] = useState(0);
+  const [playing, setPlayingState] = useState(true);
+  const [speed, setSpeedState] = useState<SimSpeed>(5);
   const [layers, setLayers] = useState<LayerFlags>({
     infrastructure: true,
     live: true,
@@ -188,142 +120,77 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     decision: true,
   });
 
-  useEffect(
-    () =>
-      source.subscribe((s) => {
-        setSim(s);
-        setBundle(source.getBundle?.() ?? null);
-      }),
-    [source],
-  );
-
-  // Keep the authoritative clock's play/speed intent in sync with the UI.
-  const setPlaying = useCallback(
-    (v: boolean) => {
-      setPlayingState(v);
-      source.setPlaying?.(v);
-    },
-    [source],
-  );
-  const setSpeed = useCallback(
-    (v: SimSpeed) => {
-      setSpeedState(v);
-      source.setSpeed?.(v);
-    },
-    [source],
-  );
+  // The network is static; fetch it once and build the projector from it.
+  useEffect(() => {
+    const { http } = backendUrls();
+    let cancelled = false;
+    const load = () =>
+      fetch(`${http}/api/network`)
+        .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
+        .then((n: RailNetwork) => {
+          if (!cancelled) setNetwork(n);
+        })
+        .catch(() => window.setTimeout(load, 2000));
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
-    if (!playing) return;
-    // When the backend is authoritative, advance() is a no-op (the backend
-    // drives the clock); only the offline mock ticks locally here.
-    const id = window.setInterval(() => {
-      source.advance((TICK_MS / 1000) * speed);
-    }, TICK_MS);
-    return () => window.clearInterval(id);
-  }, [playing, speed, source]);
+    const { ws } = backendUrls();
+    const socket = new TwinSocket(ws, setBundle, setConnection);
+    socketRef.current = socket;
+    socket.connect();
+    return () => socket.close();
+  }, []);
 
-  // Predictions are recomputed on a coarse cadence so the horizon is stable
-  // while trains animate smoothly.
-  const predictionKey = Math.floor(sim.simTimeSec / 2);
-  const localPrediction = useMemo(
-    () => predict(sim),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [predictionKey, sim.scenario, sim.appliedActions.length, sim.blockedResources.join()],
+  const projector = useMemo(
+    () => (network ? createProjector(network) : null),
+    [network],
   );
-  // Backend-computed prediction wins when connected; otherwise derive locally.
-  const prediction = bundle?.prediction ?? localPrediction;
 
-  const localKpis = useMemo(() => computeKPIs(sim, prediction), [sim, prediction]);
-  const kpis = bundle?.kpis ?? localKpis;
+  // Only admitted, unfinished trains are on the ground. Scheduled services are
+  // future bookings and must never be drawn as if they were running (#22).
+  const activeTrains = useMemo(() => {
+    const trains = bundle?.simState.trains ?? {};
+    const live = Object.values(trains).filter((t) => t.admitted && !t.finished);
+    const ahead = horizonOffset > 0 ? bundle?.projected?.trains : undefined;
+    const view = ahead
+      ? live.flatMap((t) => {
+          const p = ahead[t.trainId];
+          return p ? [{ ...t, s: p.s, at: p.at, line: p.line, latenessSec: p.latenessSec }] : [];
+        })
+      : live;
+    return view.sort(
+      (a, b) => a.priority - b.priority || a.number.localeCompare(b.number),
+    );
+  }, [bundle, horizonOffset]);
 
-  useEffect(() => {
-    setBaselineKpis((prev) => prev ?? kpis);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sim.scenario]);
+  // While scrubbing, the console shows the BACKEND'S projected frame. It no
+  // longer runs a second model whose answer could differ from the numbers
+  // printed next to it.
+  const projected = horizonOffset > 0 ? (bundle?.projected ?? null) : null;
+  const conflicts = projected?.conflicts ?? bundle?.prediction.conflicts ?? [];
 
-  const selectedConflict = useMemo(() => {
-    return prediction.conflicts.find((c) => c.id === selectedConflictId) ?? null;
-  }, [prediction, selectedConflictId]);
-
-  // A decision closes the current popup. Once the next live frame arrives,
-  // open one genuinely new conflict, never whichever conflict happens to be
-  // first in a refreshed prediction.
-  useEffect(() => {
-    if (!pendingNextConflictId) return;
-    const next = prediction.conflicts.find((c) => c.id === pendingNextConflictId && !handledConflictIds.has(conflictKey(c)))
-      ?? prediction.conflicts.find((c) => !handledConflictIds.has(conflictKey(c)));
-    setPendingNextConflictId(null);
-    if (next) {
-      setSelectedConflictId(next.id);
-      setWhatIfOpen(true);
-    }
-  }, [prediction, pendingNextConflictId, handledConflictIds]);
-
-  const optionsKey = `${selectedConflict?.id ?? ""}|${Math.floor(sim.simTimeSec / 10)}|${sim.appliedActions.length}`;
-  const localOptions = useMemo(
-    () => (selectedConflict ? generateOptions(sim, selectedConflict) : []),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [optionsKey],
+  const selectedConflict = useMemo(
+    () => conflicts.find((c) => c.id === selectedConflictId) ?? null,
+    [conflicts, selectedConflictId],
   );
-  // Backend (OR-Tools) options win when present for the selected conflict.
-  const backendOptions =
-    selectedConflict && bundle
-      ? (bundle.optionsByConflict?.[selectedConflict.id] ?? bundle.options)
-      : undefined;
-  const options = backendOptions ?? localOptions;
 
-  const localRecommendation = useMemo(() => {
-    if (selectedConflict) return recommend(selectedConflict, localOptions)!;
-    return {
-      mode: "MONITORING", status: "NO_CONFLICT", conflictId: null, optionId: null,
-      rationale: "No resource contention is predicted in the current 15-minute horizon; no intervention is required.",
-      expectedOutcome: "Continue monitoring the network and advance the timeline for the next event.",
-      alternatives: [],
-    } as Recommendation;
-  },
-    [selectedConflict, localOptions],
-  );
-  const backendRecommendation =
-    selectedConflict && bundle
-      ? (bundle.recommendationByConflict?.[selectedConflict.id] ?? bundle.recommendation)
-      : undefined;
-  const recommendation =
-    backendRecommendation !== undefined ? backendRecommendation : localRecommendation;
+  const options = useMemo(() => {
+    if (!bundle || !selectedConflict) return [];
+    return bundle.optionsByConflict?.[selectedConflict.id] ?? [];
+  }, [bundle, selectedConflict]);
 
-  // Scenario changes begin at the demo snapshot. If a conflict is already in
-  // the horizon, focus the earliest one and move the backend clock close to it
-  // so the decision panel is immediately useful. A scenario with no conflict
-  // remains at NOW and renders the monitoring response instead.
-  useEffect(() => {
-    const earliest = [...prediction.conflicts].sort((a, b) => a.etaSec - b.etaSec)[0];
-    if (!earliest) {
-      setSelectedConflictId(null);
-      setWhatIfOpen(false);
-      return;
-    }
-    setHandledConflictIds(new Set());
-    setAcknowledgedDecision(null);
-    setPendingNextConflictId(null);
-    setSelectedConflictId(earliest.id);
-    setWhatIfOpen(true);
-    const focusAt = sim.simTimeSec + Math.max(0, earliest.etaSec - 45);
-    if (focusAt > sim.simTimeSec + 1) {
-      setPlayingState(false);
-      source.setPlaying?.(false);
-      source.seek(focusAt);
-    }
-    // Only run this automatic focus when the selected scenario changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sim.scenario]);
-
-  const view = useMemo(
-    () => (horizonOffset > 0 ? projectStateAt(sim, horizonOffset) : sim),
-    [sim, horizonOffset],
-  );
+  const recommendation = useMemo(() => {
+    if (!bundle) return null;
+    if (!selectedConflict) return bundle.recommendation;
+    return bundle.recommendationByConflict?.[selectedConflict.id] ?? null;
+  }, [bundle, selectedConflict]);
 
   const previewOption = useMemo(() => {
-    if (options.length === 0) return null;
+    if (!options.length) return null;
     return (
       options.find((o) => o.id === previewOptionId) ??
       options.find((o) => o.id === recommendation?.optionId) ??
@@ -331,231 +198,186 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     );
   }, [options, previewOptionId, recommendation]);
 
-  /** Projected trajectory of the previewed action, drawn as the recommended layer. */
-  const previewPathKey = `${previewOption?.id ?? ""}|${optionsKey}`;
-  const previewPath = useMemo(() => {
-    if (!previewOption || !previewOption.feasible) return null;
-    const applied = applyAction(sim, previewOption.action);
-    return predict(applied).paths[previewOption.action.trainId] ?? null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [previewPathKey]);
-
-  const decide = useCallback(
-    (
-      option: OptionOutcome,
-      outcome: DecisionOutcome,
-      note = "",
-      override?: ResolutionAction,
-    ) => {
-      const conflict = selectedConflict;
-      if (!conflict) return;
-      const action = override ?? option.action;
-      const record: DecisionRecord = {
-        id: `D-${Date.now()}`,
-        simTimeSec: sim.simTimeSec,
-        wallClock: clockOf(sim.epochStartMs + sim.simTimeSec * 1000),
-        conflictId: conflict.id,
-        conflictLabel: `${conflict.trainA}${conflict.trainB ? ` / ${conflict.trainB}` : ""} @ ${conflict.resourceId}`,
-        optionTitle: option.title,
-        action,
-        outcome,
-        networkDelaySec: option.networkDelaySec,
-        delayAvoidedSec: outcome === "REJECTED"
-          ? -Math.abs(option.networkDelaySec)
-          : Math.max(0, -option.networkDelaySec),
-        note,
-        kpiBefore: kpis,
-        description: recommendation?.rationale ?? option.title,
-        expectedOutcome: recommendation?.expectedOutcome,
-      };
-      setDecisions((d) => [record, ...d]);
-      // Prefer the backend decision path (safety re-validation + audit log);
-      // fall back to a direct action apply for the offline mock.
-      if (source.decide) {
-        source.decide(conflict, action, outcome, note, bundle?.suggestionRevision, option.responseClass);
-      } else if (outcome !== "REJECTED") {
-        source.applyAction(action);
-      }
-      const next = prediction.conflicts.find((c) => c.id !== conflict.id && !handledConflictIds.has(conflictKey(c)));
-      setHandledConflictIds((ids) => {
-        const nextIds = new Set(ids);
-        nextIds.add(conflictKey(conflict));
-        return nextIds;
-      });
-      // Close the What-if decision view for every controller response. A
-      // rejection must not leave the same recommendation/actions open, and a
-      // backend safety rejection of a modified action is still a completed
-      // controller response from the UI's point of view.
-      setHorizonOffset(0);
-      setAcknowledgedDecision({ conflictId: conflict.id, optionTitle: option.title, outcome });
+  // A conflict that has been resolved or expired must not leave a stale modal.
+  useEffect(() => {
+    if (selectedConflictId && !conflicts.some((c) => c.id === selectedConflictId)) {
       setSelectedConflictId(null);
-      setSelection(null);
-      setPreviewOptionId(null);
       setWhatIfOpen(false);
-      setPendingNextConflictId(next?.id ?? null);
+      setPreviewOptionId(null);
+    }
+  }, [conflicts, selectedConflictId]);
+
+  const send = useCallback((msg: Record<string, unknown>) => {
+    socketRef.current?.send(msg);
+  }, []);
+
+  const setPlaying = useCallback(
+    (v: boolean) => {
+      setPlayingState(v);
+      send({ cmd: v ? "resume" : "pause" });
     },
-    [selectedConflict, sim, kpis, recommendation, source, bundle, prediction, handledConflictIds],
+    [send],
   );
 
-  const openWhatIf = useCallback((id?: string) => {
-    const targetId = id ?? selectedConflictId ?? prediction.conflicts[0]?.id;
-    if (!targetId || !prediction.conflicts.some((c) => c.id === targetId)) return;
-    setHandledConflictIds((ids) => {
-      const next = new Set(ids);
-      const target = prediction.conflicts.find((c) => c.id === targetId);
-      if (target) next.delete(conflictKey(target));
-      return next;
-    });
-    setAcknowledgedDecision(null);
-    setSelectedConflictId(targetId);
-    setPreviewOptionId(null);
-    setWhatIfOpen(true);
-  }, [prediction, selectedConflictId]);
+  const setSpeed = useCallback(
+    (v: SimSpeed) => {
+      setSpeedState(v);
+      send({ cmd: "set_speed", speed: v });
+    },
+    [send],
+  );
+
+  const openWhatIf = useCallback(
+    (id?: string) => {
+      const target = id ?? selectedConflictId ?? conflicts[0]?.id;
+      if (!target) return;
+      setSelectedConflictId(target);
+      setPreviewOptionId(null);
+      setWhatIfOpen(true);
+    },
+    [conflicts, selectedConflictId],
+  );
 
   const closeWhatIf = useCallback(() => {
     setWhatIfOpen(false);
-    setSelectedConflictId(null);
-    setSelection(null);
     setPreviewOptionId(null);
-    setPendingNextConflictId(null);
   }, []);
 
-
-  const stepForward = useCallback(
-    (sec: number) => {
-      setPlaying(false);
-      source.seek(source.getState().simTimeSec + sec);
-    },
-    [source],
-  );
-
-  const jumpToNextEvent = useCallback(() => {
-    const next = prediction.conflicts[0];
-    const target = next ? Math.max(15, next.etaSec - 45) : 120;
-    setPlaying(false);
-    source.seek(source.getState().simTimeSec + target);
-  }, [prediction, source]);
-
-  const loadScenario = useCallback(
-    (id: ScenarioId) => {
-      source.loadScenario(id);
-      setSelectedConflictId(null);
-      setAcknowledgedDecision(null);
-      setHandledConflictIds(new Set());
-      setPendingNextConflictId(null);
-      setWhatIfOpen(false);
-      setSelectedTrainId(null);
-      setSelection(null);
-      setFocusMode(false);
+  const selectConflict = useCallback(
+    (id: string | null) => {
+      setSelectedConflictId(id);
+      setSelection(id ? { kind: "conflict", id } : null);
       setPreviewOptionId(null);
-      setHorizonOffset(0);
-      setBaselineKpis(null);
-      setPlaying(true);
+      if (id) setWhatIfOpen(true);
+      else setWhatIfOpen(false);
     },
-    [source],
+    [],
   );
-
-  const setClockMode = useCallback((mode: ClockMode) => {
-    source.setClockMode?.(mode);
-  }, [source]);
-
-  const loadCustomScenario = useCallback(
-    (scenario: CustomScenario) => {
-      source.loadCustomScenario?.(scenario);
-      setSelectedConflictId(null);
-      setAcknowledgedDecision(null);
-      setHandledConflictIds(new Set());
-      setPendingNextConflictId(null);
-      setWhatIfOpen(false);
-      setPreviewOptionId(null);
-      setHorizonOffset(0);
-      setBaselineKpis(null);
-      setPlaying(true);
-    },
-    [source],
-  );
-
-  const toggleLayer = useCallback((k: keyof LayerFlags) => {
-    setLayers((l) => ({ ...l, [k]: !l[k] }));
-  }, []);
 
   const selectTrain = useCallback((id: string | null) => {
     setSelectedTrainId(id);
     setSelection(id ? { kind: "train", id } : null);
   }, []);
 
-  const selectConflict = useCallback((id: string | null) => {
-    if (id) openWhatIf(id);
-    else closeWhatIf();
-    setSelectedConflictId(id);
-    setSelection(id ? { kind: "conflict", id } : null);
-    setPreviewOptionId(null);
-  }, [openWhatIf, closeWhatIf]);
-
   const select = useCallback((sel: Selection) => {
     setSelection(sel);
-    if (sel?.kind === "conflict") openWhatIf(sel.id);
-    if (sel?.kind === "train") setSelectedTrainId(sel.id);
-    else if (sel?.kind === "conflict") setSelectedConflictId(sel.id);
-    else if (!sel) setSelectedTrainId(null);
-  }, [openWhatIf]);
+    setSelectedTrainId(sel?.kind === "train" ? sel.id : null);
+    if (sel?.kind === "conflict") {
+      setSelectedConflictId(sel.id);
+      setWhatIfOpen(true);
+    }
+  }, []);
+
+  const decide = useCallback(
+    (
+      option: OptionOutcome,
+      outcome: "ACCEPTED" | "MODIFIED" | "REJECTED",
+      note = "",
+      override?: ResolutionAction,
+    ) => {
+      if (!selectedConflict) return;
+      // The decision log is written by the backend after re-validation, so what
+      // it records is what actually happened - not what the UI hoped would.
+      send({
+        cmd: "decide",
+        conflictId: selectedConflict.id,
+        action: override ?? option.action,
+        outcome,
+        note,
+        optionTitle: override ? `${option.title} (modified)` : option.title,
+        expectedRevision: bundle?.suggestionRevision,
+        responseMode: option.responseClass,
+      });
+      setWhatIfOpen(false);
+      setSelectedConflictId(null);
+      setPreviewOptionId(null);
+      setHorizonOffset(0);
+    },
+    [bundle, selectedConflict, send],
+  );
+
+  const loadScenario = useCallback(
+    (id: ScenarioId) => {
+      send({ cmd: "load_scenario", scenario: id });
+      setSelectedConflictId(null);
+      setWhatIfOpen(false);
+      setSelectedTrainId(null);
+      setSelection(null);
+      setPreviewOptionId(null);
+      setHorizonOffset(0);
+      setPlayingState(true);
+    },
+    [send],
+  );
+
+  const resetToBase = useCallback(() => {
+    send({ cmd: "reset" });
+    setSelectedConflictId(null);
+    setWhatIfOpen(false);
+    setSelection(null);
+    setHorizonOffset(0);
+    setPlayingState(true);
+  }, [send]);
+
+  const toggleLayer = useCallback((k: keyof LayerFlags) => {
+    setLayers((l) => ({ ...l, [k]: !l[k] }));
+  }, []);
+
+  const setHorizon = useCallback(
+    (v: number) => {
+      setHorizonOffset(v);
+      // Scrubbing asks the BACKEND for the projected frame; the console no
+      // longer runs a second model of its own that could disagree with it.
+      send({ cmd: "set_horizon_offset", offsetSec: v });
+    },
+    [send],
+  );
 
   const value: TwinContextValue = {
-    sim,
-    view,
-    prediction,
-    kpis,
+    bundle,
+    network,
+    projector,
+    connection,
+    activeTrains,
+    conflicts,
+    projecting: !!projected,
+    selectedConflict,
     options,
     recommendation,
-    globalPlan: bundle?.globalPlan ?? null,
-    selectedConflict,
-    selectedTrainId,
+    decisions: bundle?.decisions ?? [],
     selection,
+    selectedTrainId,
     focusMode,
+    whatIfOpen,
     previewOption,
-    previewPath,
     horizonOffset,
     playing,
     speed,
     layers,
-    scenario: sim.scenario,
-    decisions,
-    baselineKpis: bundle?.baselineKpis ?? baselineKpis,
-    delayAvoidedSec: bundle?.delayAvoidedSec ?? null,
-    emptyNetwork: bundle?.emptyNetwork ?? false,
-    emptyNetworkReason: bundle?.emptyNetworkReason ?? null,
-    connection: source.connectionState(),
-    causalChain: bundle?.causalChain ?? [],
-    delayBuckets: bundle?.delayBuckets ?? {},
-    mlByConflict: bundle?.mlByConflict ?? {},
-    mlByTrain: bundle?.mlByTrain ?? {},
-    acknowledgedDecision,
-    whatIfOpen,
-    modelStatus: bundle?.modelStatus ?? {
-      optimizer: { status: "READY", reason: "In-browser deterministic optimizer" },
-      ml: { status: "DETERMINISTIC_FALLBACK", reason: "In-browser deterministic projection" },
-    },
-    suggestionRevision: bundle?.suggestionRevision ?? null,
-    clockMode: bundle?.clockMode ?? sim.clockMode,
-    decisionStatus: bundle?.lastDecisionStatus ?? null,
-    setPlaying,
-    setSpeed,
-    setClockMode,
-    setHorizonOffset,
+    scenario: bundle?.scenario ?? "BASE",
+    select,
     selectTrain,
     selectConflict,
-    select,
     setFocusMode,
     setPreviewOptionId,
     openWhatIf,
     closeWhatIf,
+    setHorizonOffset: setHorizon,
+    setPlaying,
+    setSpeed,
     toggleLayer,
     loadScenario,
-    loadCustomScenario,
-    stepForward,
-    jumpToNextEvent,
+    resetToBase,
     decide,
   };
+
+  if (!mounted) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-shell">
+        <p className="label-xs text-muted-foreground">Connecting to the twin…</p>
+      </div>
+    );
+  }
 
   return <TwinContext.Provider value={value}>{children}</TwinContext.Provider>;
 }

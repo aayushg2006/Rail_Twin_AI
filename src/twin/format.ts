@@ -1,5 +1,3 @@
-import type { TrainType } from "@/domain/types";
-
 export function mmss(totalSec: number): string {
   const s = Math.max(0, Math.round(totalSec));
   const m = Math.floor(s / 60);
@@ -37,14 +35,39 @@ export function dateOf(epochMs: number): string {
   });
 }
 
-export const trainTypeLabel: Record<TrainType, string> = {
+export const trainTypeLabel: Record<string, string> = {
   EXPRESS: "EXP",
   PASSENGER: "PASS",
-  LOCAL: "LOC",
+  LOCAL: "LOCAL",
   MEMU: "MEMU",
   FREIGHT: "GOODS",
   SHUNT: "SHUNT",
 };
+
+/** Seconds -> "4.2 min late" / "1.1 min early" / "on time". */
+export function lateness(sec: number): string {
+  const m = sec / 60;
+  if (Math.abs(m) < 0.5) return "on time";
+  return m > 0 ? `${m.toFixed(1)} min late` : `${Math.abs(m).toFixed(1)} min early`;
+}
+
+/** Seconds until something happens, in words a controller would use. */
+export function countdown(sec: number): string {
+  const s = Math.max(0, Math.round(sec));
+  if (s < 60) return `in ${s}s`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return r === 0 ? `in ${m} min` : `in ${m} min ${r}s`;
+}
+
+export function minutes(sec: number): string {
+  return `${(sec / 60).toFixed(1)} min`;
+}
+
+export function compactNumber(n: number): string {
+  if (Math.abs(n) >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return n.toFixed(0);
+}
 
 export function conflictKindLabel(kind: string): string {
   return kind

@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { DecisionLogTable, PerformancePanel } from "@/components/ops/PerformancePanel";
-import { KpiBar } from "@/components/ops/KpiBar";
 
 export const Route = createFileRoute("/log")({
   head: () => ({
@@ -29,7 +28,6 @@ function LogScreen() {
         <PerformancePanel />
         <DecisionLogTable />
       </div>
-      <KpiBar />
     </main>
   );
 }

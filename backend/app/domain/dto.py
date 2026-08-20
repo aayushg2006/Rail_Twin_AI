@@ -140,3 +140,32 @@ def causal_chain_list(eng: SimulationEngine, limit: int = 40) -> list[dict]:
 
 def delay_buckets_map(eng: SimulationEngine) -> dict[str, dict]:
     return {tid: rt.delays.as_dict() for tid, rt in eng.trains.items() if not rt.finished}
+
+
+def projected_dict(eng: SimulationEngine, state) -> dict:
+    """A future frame of the SAME twin: where each train will be, and the
+    contention predicted from there. The console draws this instead of running a
+    projection of its own."""
+    from ..twin.predict import predict as _predict
+
+    pred = _predict(state, 900)
+    trains: dict[str, dict] = {}
+    for tid, st in state.trains.items():
+        if st.finished or not st.admitted:
+            continue
+        route = eng.routes.get(tid)
+        if route is None:
+            continue
+        position = route.position_at(st.s)
+        trains[tid] = {
+            "trainId": tid,
+            "s": round(st.s, 1),
+            "at": position.as_dict(),
+            "line": route.line_at(st.s),
+            "latenessSec": round(st.lateness_sec, 1),
+        }
+    return {
+        "offsetSec": round(state.sim_time - eng.now, 1),
+        "trains": trains,
+        "conflicts": [conflict_dict(c) for c in pred.conflicts],
+    }

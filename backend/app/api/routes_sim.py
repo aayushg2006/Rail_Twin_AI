@@ -14,9 +14,15 @@ router = APIRouter(prefix="/api")
 @router.get("/health")
 async def health(request: Request) -> dict:
     orch = request.app.state.orchestrator
-    return {"status": "ok", "scenario": orch.engine.scenario_id,
-            "simTimeSec": round(orch.engine.now, 1), "playing": orch.playing,
-            "clients": len(orch._clients)}
+    return {
+        "status": "degraded" if getattr(orch, "_tick_error", "") else "ok",
+        "scenario": orch.engine.scenario_id,
+        "simTimeSec": round(orch.engine.now, 1),
+        "playing": orch.playing,
+        "clients": len(orch._clients),
+        "tickFailures": getattr(orch, "_tick_failures", 0),
+        "tickError": getattr(orch, "_tick_error", ""),
+    }
 
 
 @router.get("/scenarios")
@@ -52,6 +58,35 @@ async def get_metrics(request: Request) -> dict:
 async def get_audit(request: Request) -> list[dict]:
     audit = getattr(request.app.state, "audit", None)
     return audit.all() if audit else []
+
+
+@router.get("/ingest")
+async def get_ingest(request: Request) -> dict:
+    """Live-data status: mode, budget, watchlist and the latest observations."""
+    ingest = getattr(request.app.state, "ingest", None)
+    if ingest is None:
+        return {"enabled": False, "mode": "off",
+                "reason": "ingestion service is not attached"}
+    return await ingest.status()
+
+
+@router.post("/ingest/poll")
+async def poll_ingest(request: Request) -> dict:
+    """Force one polling cycle (costs budget in live mode)."""
+    ingest = getattr(request.app.state, "ingest", None)
+    if ingest is None or not ingest.enabled:
+        return {"polled": 0, "reason": "ingestion is disabled"}
+    fresh = await ingest.poll_once()
+    return {"polled": len(fresh), "observations": [o.as_dict() for o in fresh]}
+
+
+@router.get("/observations")
+async def get_observations(request: Request, limit: int = 200) -> list[dict]:
+    """Collected lateness readings, the training set for the real-data model."""
+    ingest = getattr(request.app.state, "ingest", None)
+    if ingest is None:
+        return []
+    return await ingest.collector.recent(limit)
 
 
 @router.get("/network")

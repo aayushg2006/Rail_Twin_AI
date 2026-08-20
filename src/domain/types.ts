@@ -1,418 +1,40 @@
 /**
- * Vasai Road Digital Twin — domain model.
+ * The console's contract with the backend twin.
  *
- * These types describe railway state only. No presentation concerns live here.
+ * Position is CHAINAGE — a corridor and a distance in metres from the centre of
+ * the Vasai Road platform line. Pixels exist in exactly one place, the
+ * projection in `src/twin/projection.ts`, and nowhere else. That separation is
+ * why distances on screen can be compressed for legibility while every ETA,
+ * headway and separation stays a real physical quantity.
  */
 
-export type Point = { x: number; y: number };
+export type CorridorId = "NORTH" | "SOUTH" | "DIVA" | "YARD" | "STATION";
 
-export type Direction = "UP" | "DOWN" | "BRANCH_OUT" | "BRANCH_IN";
-
-export type LineKind =
-  | "WESTERN_SLOW"
-  | "WESTERN_FAST"
-  | "DIVA_BRANCH"
-  | "FREIGHT_CHORD"
-  | "YARD";
-
-export interface Track {
-  id: string;
-  name: string;
-  kind: LineKind;
-  direction: Direction;
-  /** Ordered polyline in map units. */
-  path: Point[];
-  /** Long-distance / through line rather than suburban. */
-  through?: boolean;
+/** A point on the railway, in metres. */
+export interface Chainage {
+  corridor: CorridorId | string;
+  m: number;
 }
 
-export interface Platform {
-  id: string;
-  label: string;
-  /** Rectangle in map units. */
+export interface ScreenPoint {
   x: number;
   y: number;
-  w: number;
-  h: number;
-  /** Track ids served by this platform face. */
-  serves: string[];
-  usage: string;
-  side: "WEST" | "ISLAND" | "EAST";
 }
 
-export type ResourceKind = "JUNCTION" | "PLATFORM" | "BLOCK";
+export type ServiceCategory =
+  | "EXPRESS" | "PASSENGER" | "LOCAL" | "MEMU" | "FREIGHT" | "SHUNT";
 
-/** A finite piece of infrastructure that trains contend for. */
-export interface Resource {
-  id: string;
-  label: string;
-  kind: ResourceKind;
-  at: Point;
-  /** Capture radius, map units — a route passing within this uses the resource. */
-  radius: number;
-  /** Minimum separation between two movements over this resource, seconds. */
-  headwaySec: number;
-  capacity: number;
-}
+export type ServiceClass =
+  | "PREMIUM" | "SUPERFAST" | "MAIL_EXPRESS" | "PASSENGER" | "SUBURBAN"
+  | "LOCAL_FAST" | "LOCAL_SEMIFAST" | "LOCAL_SLOW" | "LOCAL_AC"
+  | "FREIGHT" | "PREMIUM_FREIGHT" | "FREIGHT_EMPTY" | "SHUNT";
 
-export interface SignalPost {
-  id: string;
-  at: Point;
-  /** Rotation, degrees. 0 = facing right (toward Dahanu Road). */
-  facing: number;
-  aspect: "GREEN" | "YELLOW" | "RED";
-}
+export type TrainState =
+  | "SCHEDULED" | "APPROACHING" | "RUNNING" | "REGULATED"
+  | "HELD" | "DWELL" | "CLEARED";
 
-export interface Junction {
-  id: string;
-  label: string;
-  at: Point;
-}
-
-export interface StationTick {
-  name: string;
-  at: Point;
-  km: number;
-  corridor: CorridorId;
-}
-
-export type CorridorId = "NORTH" | "SOUTH" | "DIVA" | "STATION";
-
-export interface RouteStop {
-  /** Distance along the route path, map units. */
-  s: number;
-  platformId: string;
-  dwellSec: number;
-}
-
-export interface RailRoute {
-  id: string;
-  label: string;
-  /** Continuous polyline the train physically follows. */
-  path: Point[];
-  /** Track ids traversed, in order — used for direction validation. */
-  tracks: string[];
-  stops: RouteStop[];
-  corridorFrom: CorridorId;
-  corridorTo: CorridorId;
-}
-
-export type TrainType = "EXPRESS" | "PASSENGER" | "LOCAL" | "MEMU" | "FREIGHT" | "SHUNT";
-
-export type TrainOperationalState =
-  | "SCHEDULED"
-  | "RUNNING"
-  | "APPROACHING"
-  | "DWELL"
-  | "HELD"
-  | "REGULATED"
-  | "CLEARED";
-
-export interface Train {
-  id: string;
-  number: string;
-  name: string;
-  type: TrainType;
-  /** 1 = highest operational priority (0 = premium: Rajdhani / Vande Bharat). */
-  priority: number;
-  /** Relative revenue/importance the optimizer protects (higher = costlier to delay). */
-  economicWeight?: number;
-  /** Display class: PREMIUM, EXPRESS, SUBURBAN, PREMIUM_FREIGHT, FREIGHT, SHUNT, … */
-  serviceClass?: string;
-  routeId: string;
-  origin: string;
-  destination: string;
-  /** Scheduled delay carried on entry, minutes. */
-  entryDelayMin: number;
-  /** Timetable provenance and schedule metadata. */
-  scheduledDepartureSec?: number;
-  source?: string;
-  provenance?: "passenger-snapshot" | "synthetic-demo" | "fois-import";
-}
-
-export interface ScheduleService extends Train {
-  operatingDays: string;
-  snapshotDate: string;
-}
-
-export interface FreightTemplate {
-  id: string;
-  label: string;
-  routeId: string;
-  origin: string;
-  destination: string;
-  departureWindow: [number, number];
-  nominalSpeedKmh: number;
-  provenance: "synthetic-demo";
-}
-
-export interface ScenarioEvent {
-  id: string;
-  kind: "TRAIN_DELAY" | "SPEED_RESTRICTION" | "HOLD" | "BREAKDOWN" | "BLOCK" | "PLATFORM" | "HEADWAY";
-  targetId: string;
-  value?: number;
-  atSec?: number;
-  durationSec?: number;
-  severity?: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
-  reason?: string;
-}
-
-export interface CustomScenario {
-  id: string;
-  label: string;
-  description: string;
-  events: ScenarioEvent[];
-}
-
-export interface DataPack {
-  id: string;
-  label: string;
-  snapshotDate: string;
-  defaultReferenceDay: string;
-  sources: { label: string; url?: string; snapshotDate: string; provenance: string }[];
-  services: ScheduleService[];
-  freightTemplates: FreightTemplate[];
-  scenarios: ScenarioDefinition[];
-}
-
-export type ClockMode = "LIVE" | "DEMO";
-export type ConnectionStatus = "CONNECTED" | "RECONNECTING" | "SIMULATED" | "OFFLINE";
-
-export interface GlobalPlan {
-  id: string;
-  status: "COMPLETE" | "PARTIAL" | "NO_SAFE_PLAN" | "MONITORING";
-  actions: ResolutionAction[];
-  clearedConflicts: string[];
-  residualConflicts: string[];
-  networkDelaySec: number;
-  throughputDelta: number;
-  rationale: string;
-}
-
-/** Mutable live state of one train. */
-export interface TrainState {
-  trainId: string;
-  /** Distance travelled along its route path, map units. */
-  s: number;
-  /** Commanded line speed, km/h. */
-  speedKmh: number;
-  /** Line speed before any regulation was applied. */
-  nominalSpeedKmh: number;
-  state: TrainOperationalState;
-  /** Remaining dwell at the current stop, seconds. */
-  dwellRemainingSec: number;
-  /** Index of the next stop in the route. */
-  nextStopIndex: number;
-  /** Additional hold imposed by a controller decision, seconds remaining. */
-  holdRemainingSec: number;
-  /** Accumulated delay, seconds. */
-  delaySec: number;
-  scheduledDepartureSec?: number;
-  activationAtSec?: number;
-  latenessSec?: number;
-  earlinessSec?: number;
-  signedVarianceSec?: number;
-  /** Set once the train has run off the end of its route. */
-  finished: boolean;
-}
-
-export type ConflictKind =
-  | "JUNCTION_CONTENTION"
-  | "PLATFORM_OCCUPATION_OVERLAP"
-  | "HEADWAY_VIOLATION_RISK"
-  | "BLOCK_OCCUPANCY"
-  | "ROUTE_CONFLICT";
-
-export type ConflictSeverity = "CRITICAL" | "WARNING";
-
-export interface Conflict {
-  id: string;
-  kind: ConflictKind;
-  severity: ConflictSeverity;
-  resourceId: string;
-  resourceLabel: string;
-  at: Point;
-  trainA: string;
-  trainB: string;
-  /** Simulation seconds from now until the first train reaches the resource. */
-  etaSec: number;
-  /** Separation between the two movements over the resource, seconds. */
-  separationSec: number;
-  requiredSeparationSec: number;
-}
-
-export interface PredictedSample {
-  trainId: string;
-  /** Offsets from now, seconds. */
-  tSec: number;
-  at: Point;
-  s: number;
-}
-
-export interface Prediction {
-  horizonSec: number;
-  conflicts: Conflict[];
-  /** Projected path polyline per train over the horizon. */
-  paths: Record<string, Point[]>;
-}
-
-export type ActionKind =
-  | "SPEED_REGULATION"
-  | "HOLD"
-  | "ALTERNATE_ROUTE"
-  | "PLATFORM_REASSIGNMENT"
-  | "NO_ACTION";
-
-export interface ResolutionAction {
-  kind: ActionKind;
-  trainId: string;
-  /** km/h for SPEED_REGULATION. */
-  speedKmh?: number;
-  /** seconds for HOLD. */
-  holdSec?: number;
-  routeId?: string;
-  platformId?: string;
-}
-
-export interface OptionOutcome {
-  id: string;
-  letter: string;
-  title: string;
-  action: ResolutionAction;
-  conflictResolved: boolean;
-  /** Per-train added delay, seconds, keyed by train id. */
-  addedDelaySec: Record<string, number>;
-  networkDelaySec: number;
-  passengerDelaySec: number;
-  freightDelaySec: number;
-  /** Sum of per-train added delay × economic weight — protects high-value trains. */
-  weightedDelaySec?: number;
-  throughputDelta: number;
-  infrastructureChange: "NONE" | "LOW" | "MEDIUM";
-  safety: SafetyValidation;
-  /** Conflicts still predicted after applying the action. */
-  residualConflicts: number;
-  feasible: boolean;
-  infeasibleReason?: string;
-  responseClass?: "RESOLUTION" | "CONTAINMENT";
-}
-
-export interface SafetyValidation {
-  passed: boolean;
-  checks: { id: string; label: string; passed: boolean; detail: string }[];
-}
-
-export interface FailureMetricCheck {
-  id: string;
-  label: string;
-  detail: string;
-}
-
-export interface FailureMetrics {
-  candidateCount: number;
-  feasibleCandidateCount: number;
-  safetyPassingCandidateCount: number;
-  conflictClearingCandidateCount: number;
-  actualSeparationSec: number | null;
-  requiredSeparationSec: number | null;
-  separationDeficitSec: number;
-  residualCriticalConflicts: number;
-  residualWarningConflicts: number;
-  failedSafetyChecks: FailureMetricCheck[];
-  infeasibleReasons: { candidate: string; reason: string }[];
-  blockedResources: string[];
-  unavailableRoutes: string[];
-  headwayMultiplier: number;
-  networkDelaySec: number;
-  passengerDelaySec: number;
-  freightDelaySec: number;
-  weightedDelaySec: number;
-  primaryFailureReason: string;
-}
-
-export interface Recommendation {
-  mode: "RESOLUTION" | "CONTAINMENT" | "MONITORING";
-  status: "READY" | "NO_SAFE_RESOLUTION" | "NO_CONFLICT";
-  conflictId: string | null;
-  optionId: string | null;
-  rationale: string;
-  expectedOutcome: string;
-  alternatives: string[];
-  failureMetrics?: FailureMetrics;
-}
-
-export interface KPISet {
-  activeConflicts: number;
-  trainsTracked: number;
-  totalDelaySec: number;
-  averageDelaySec: number;
-  passengerDelaySec: number;
-  freightDelaySec: number;
-  throughputPerHour: number | null;
-  platformUtilisation: number;
-  onTimePercent: number;
-  recoveryTimeSec: number | null;
-  latenessSec?: number;
-  earlinessSec?: number;
-  signedVarianceSec?: number;
-  missedServices?: number;
-}
-
-export type DecisionOutcome = "ACCEPTED" | "REJECTED" | "MODIFIED";
-
-export interface DecisionRecord {
-  id: string;
-  simTimeSec: number;
-  wallClock: string;
-  conflictId: string;
-  conflictLabel: string;
-  optionTitle: string;
-  action: ResolutionAction;
-  outcome: DecisionOutcome;
-  networkDelaySec: number;
-  /** Signed per-decision delay benefit in seconds. */
-  delayAvoidedSec: number;
-  note: string;
-  kpiBefore: KPISet;
-  /** Human-readable explanation captured with the controller decision. */
-  description?: string;
-  expectedOutcome?: string | undefined;
-}
-
-export type ScenarioId =
-  | "BASE"
-  | "FREIGHT_DELAY"
-  | "EXPRESS_DELAY"
-  | "PLATFORM_UNAVAILABLE"
-  | "TRACK_BLOCKAGE"
-  | "SIGNAL_FAILURE"
-  | "TRAIN_BREAKDOWN"
-  | "YARD_CONGESTION"
-  | "PEAK_TRAFFIC"
-  | "MULTIPLE_DELAYS"
-  | "BEST_CASE"
-  | "WORST_CASE"
-  | (string & {});
-
-export interface ScenarioDefinition {
-  id: ScenarioId;
-  label: string;
-  description: string;
-}
-
-/** One edge of the delay-dependency graph — a computed cause of added delay. */
-export interface CausalLink {
-  cause_type: string;
-  cause_entity: string;
-  affected_train: string;
-  resource: string;
-  added_delay_seconds: number;
-  timestamp: number;
-}
-
-/** Per-cause delay breakdown for one train (seconds). Powers explainability. */
 export interface DelayBreakdown {
-  base_schedule: number;
+  entry: number;
   dwell: number;
   block_wait: number;
   junction_wait: number;
@@ -424,33 +46,381 @@ export interface DelayBreakdown {
   total: number;
 }
 
-/** Top contributing features behind one ML prediction. */
-export interface FeatureContribution {
-  feature: string;
-  value: number;
-  contribution: number;
+export interface TrainSnapshot {
+  trainId: string;
+  number: string;
+  name: string;
+  category: ServiceCategory;
+  serviceClass: ServiceClass;
+  priority: number;
+  typicalLoad: number;
+  /** Metres along this train's route. */
+  s: number;
+  routeLengthM: number;
+  at: Chainage | null;
+  line: string | null;
+  platformId: string | null;
+  speedKmh: number;
+  lineSpeedKmh: number;
+  regulatedKmh: number | null;
+  state: TrainState;
+  dwellRemainingSec: number;
+  holdRemainingSec: number;
+  bookedDepSec: number;
+  actualDepSec: number | null;
+  /** Negative means genuinely early. */
+  latenessSec: number;
+  delayBreakdown: DelayBreakdown;
+  origin: string;
+  destination: string;
+  arrivalCorridor: string;
+  departureCorridor: string;
+  provenance: string;
+  admitted: boolean;
+  finished: boolean;
 }
 
-/** ML prediction attached to a train or conflict (Phase 4). */
+export type ConflictSeverity = "CRITICAL" | "WARNING";
+
+export interface Conflict {
+  id: string;
+  kind: string;
+  severity: ConflictSeverity;
+  resourceId: string;
+  resourceLabel: string;
+  resourceKind: "JUNCTION" | "PLATFORM" | "BLOCK" | string;
+  at: Chainage;
+  trainA: string;
+  trainB: string;
+  /** Seconds until the first movement reaches the contended resource. */
+  etaSec: number;
+  separationSec: number;
+  requiredSeparationSec: number;
+  probability: number;
+  timeToConflictSec: number;
+}
+
+export interface Prediction {
+  horizonSec: number;
+  conflicts: Conflict[];
+  paths: Record<string, Chainage[]>;
+}
+
+/** `null` means NOT YET MEASURED — the console must say so, not print a zero. */
+export interface KPISet {
+  activeConflicts: number;
+  predictedConflicts: number;
+  trainsTracked: number;
+  scheduledAhead: number;
+  totalLatenessSec: number;
+  earlinessSec: number;
+  averageLatenessSec: number;
+  passengerDelaySec: number;
+  freightDelaySec: number;
+  passengerMinutes: number;
+  throughputPerHour: number | null;
+  platformUtilisation: number;
+  onTimePercent: number | null;
+  departuresMeasured: number;
+}
+
+export type ActionKind =
+  | "HOLD" | "SPEED_REGULATION" | "PLATFORM_REASSIGNMENT" | "ALTERNATE_ROUTE"
+  | "NO_ACTION";
+
+export interface ResolutionAction {
+  kind: ActionKind;
+  trainId: string;
+  speedKmh?: number;
+  holdSec?: number;
+  routeId?: string;
+  platformId?: string;
+}
+
+export interface SafetyCheck {
+  id: string;
+  label: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface SafetyValidation {
+  passed: boolean;
+  checks: SafetyCheck[];
+  mode: "RESOLUTION" | "CONTAINMENT";
+}
+
+export interface OptionOutcome {
+  id: string;
+  letter: string;
+  title: string;
+  action: ResolutionAction;
+  conflictResolved: boolean;
+  addedDelaySec: Record<string, number>;
+  networkDelaySec: number;
+  passengerDelaySec: number;
+  freightDelaySec: number;
+  /** The primary cost: delay multiplied by the people on board. */
+  passengerMinutes: number;
+  freightTonneMinutes: number;
+  throughputDelta: number;
+  infrastructureChange: "NONE" | "LOW" | "MEDIUM";
+  safety: SafetyValidation;
+  residualConflicts: number;
+  feasible: boolean;
+  infeasibleReason?: string;
+  responseClass: "RESOLUTION" | "CONTAINMENT";
+}
+
+export interface CostBreakdown {
+  residualConflicts: number;
+  passengerMinutes: number;
+  freightTonneMinutes: number;
+  holdSec: number;
+  routeChanges: number;
+  throughputDelta: number;
+  total: number;
+}
+
+export interface Alternative {
+  title: string;
+  passengerMinutes: number;
+  networkDelaySec: number;
+}
+
+export interface Recommendation {
+  mode: "RESOLUTION" | "CONTAINMENT" | "MONITORING";
+  status: string;
+  conflictId: string | null;
+  optionId: string | null;
+  rationale: string;
+  expectedOutcome: string;
+  alternatives: Alternative[];
+  costBreakdown?: CostBreakdown;
+}
+
+export interface GlobalPlan {
+  id: string;
+  status: "MONITORING" | "COMPLETE" | "PARTIAL" | "NO_SAFE_PLAN";
+  solver: "CP-SAT" | "AMCC" | "NONE";
+  solverStatus: string;
+  optimalityGap: number | null;
+  solveMs: number;
+  actions: ResolutionAction[];
+  clearedConflicts: string[];
+  residualConflicts: string[];
+  passengerMinutes: number;
+  fcfsPassengerMinutes: number;
+  passengerMinutesSaved: number;
+  rationale: string;
+}
+
+export interface DecisionRecord {
+  id: string;
+  simTimeSec: number;
+  serviceSeconds: number;
+  conflictId: string | null;
+  where: string;
+  trains: string[];
+  action: ResolutionAction;
+  optionTitle: string;
+  note: string;
+  outcome: "ACCEPTED" | "MODIFIED" | "REJECTED";
+  reason?: string;
+  safety?: SafetyValidation;
+  latenessBeforeSec?: number;
+  latenessAfterSec?: number;
+  conflictCleared?: boolean;
+}
+
+export interface DelayAvoided {
+  decisionsApplied: number;
+  decisionsRejected: number;
+  /** Hold time issued but not yet served - the comparison is mid-flight. */
+  holdInFlightSec: number;
+  settling: boolean;
+  vsDoNothingSec: number;
+  vsPriorityRuleSec: number;
+  vsDoNothingPassengerMinutes: number;
+  measured: boolean;
+}
+
+export interface TrendPoint {
+  simTimeSec: number;
+  serviceSeconds: number;
+  ai: number;
+  doNothing: number;
+  priorityRule: number;
+  aiPassengerMinutes: number;
+  doNothingPassengerMinutes: number;
+}
+
 export interface MLPrediction {
   target: "ETA" | "DELAY" | "CONFLICT";
   value: number;
+  expectedErrorSec?: number;
+  intervalLow?: number;
+  intervalHigh?: number;
   confidence: number;
   status: "OK" | "LOW_CONFIDENCE";
   modelVersion: string;
-  contributions: FeatureContribution[];
+  contributions: { feature: string; value: number; contribution: number }[];
 }
 
-export interface TwinSnapshot {
-  simTimeSec: number;
-  /** Epoch millis of the authoritative simulation clock. */
-  clockMs: number;
-  lastUpdateMs: number;
-  trainStates: Record<string, TrainState>;
-  /** Platform id -> occupying train id. */
-  platformOccupancy: Record<string, string | null>;
-  /** Resource id -> blocked flag (disruption). */
-  blockedResources: string[];
+export interface CausalLink {
+  cause_type: string;
+  cause_entity: string;
+  affected_train: string;
+  resource: string;
+  added_delay_seconds: number;
+  timestamp: number;
+}
+
+export interface LiveObservation {
+  number: string;
+  latenessSec: number;
+  lastStation: string;
+  observedAt: string;
+  source: "live" | "replay" | "cache";
+}
+
+export interface LiveDataStatus {
+  mode: "off" | "replay" | "live";
+  enabled: boolean;
+  observedTrains: number;
+  observations: LiveObservation[];
+  lastPollAt: number | null;
+  freightNote: string;
+}
+
+export interface Provenance {
+  network: string;
+  timetable: string;
+  timetableServices: number;
+  freight: string;
+  freightPaths: number;
+  freightNote: string;
+  timetableCoverage: string[];
+}
+
+// ------------------------------------------------------------------ network
+export interface NetworkCorridor {
+  id: string;
+  label: string;
+  shortLabel: string;
+  screenDir: "LEFT" | "RIGHT" | "UP" | "DOWN_LEFT";
+  reachM: number;
+  lineSpeedKmh: number;
+  stations: { code: string; name: string; chainageM: number }[];
+}
+
+export interface NetworkLine {
+  id: string;
+  label: string;
+  kind: string;
+  direction: string;
+  platformId: string | null;
+  speedLimitKmh: number;
+}
+
+export interface NetworkPlatform {
+  id: string;
+  label: string;
+  side: "WEST" | "ISLAND" | "EAST" | string;
+  usage: string;
+  serves: string[];
+  lengthM: number;
+}
+
+export interface NetworkResource {
+  id: string;
+  label: string;
+  kind: "JUNCTION" | "PLATFORM" | "BLOCK";
+  corridor: string;
+  lines: string[];
+  fromM: number;
+  toM: number;
+  centreM: number;
+  lengthM: number;
+  headwaySec: number;
+  capacity: number;
+}
+
+export interface RailNetwork {
+  units: "metres";
+  datum: string;
+  stationLimitM: number;
+  modelledReachM: number;
+  corridors: Record<string, NetworkCorridor>;
+  corridorLines: Record<string, string[]>;
+  lines: NetworkLine[];
+  platforms: NetworkPlatform[];
+  resources: NetworkResource[];
+}
+
+export type ConnectionStatus =
+  | "CONNECTED" | "CONNECTING" | "RECONNECTING" | "OFFLINE";
+
+export type ScenarioId =
+  | "BASE" | "PLATFORM_BLOCKED" | "BRANCH_BLOCKED"
+  | "SIGNAL_DEGRADED" | "FREIGHT_LATE" | "PEAK_SURGE";
+
+export interface ScenarioDefinition {
+  id: ScenarioId;
+  label: string;
+  description: string;
+  mechanism: string;
+}
+
+/** One live frame from the backend. */
+export interface TwinBundle {
+  type: "snapshot";
+  connectionStatus: string;
+  playing: boolean;
+  speed: number;
+  simState: {
+    simTimeSec: number;
+    serviceSeconds: number;
+    epochStartMs: number;
+    trains: Record<string, TrainSnapshot>;
+    scenario: ScenarioId;
+    blockedResources: string[];
+    headwayMultiplier: number;
+    appliedActions: ResolutionAction[];
+  };
+  prediction: Prediction;
+  horizonOffsetSec: number;
+  /** The SAME twin projected forward, when the controller scrubs ahead. */
+  projected: {
+    offsetSec: number;
+    trains: Record<string, { trainId: string; s: number; at: Chainage; line: string | null; latenessSec: number }>;
+    conflicts: Conflict[];
+  } | null;
+  kpis: KPISet;
+  baselines: { doNothing: KPISet; priorityRule: KPISet; ai: KPISet };
+  delayAvoided: DelayAvoided;
+  trend: TrendPoint[];
+  decisions: DecisionRecord[];
+  causalChain: CausalLink[];
+  delayBuckets: Record<string, DelayBreakdown>;
+  provenance: Provenance;
+  liveData: LiveDataStatus;
+  clockMode: "LIVE" | "DEMO";
+  wallClockMs: number;
+  serviceSeconds: number;
+  serviceDate: string;
+  suggestionRevision: number;
+  lastDecisionStatus: { status: string; reason?: string };
+  modelStatus: {
+    optimizer: { status: string; reason: string };
+    ml: { status: string; reason: string };
+  };
   scenario: ScenarioId;
-  appliedActions: ResolutionAction[];
+  optionsByConflict: Record<string, OptionOutcome[]>;
+  recommendationByConflict: Record<string, Recommendation | null>;
+  options: OptionOutcome[];
+  recommendation: Recommendation | null;
+  globalPlan: GlobalPlan;
+  mlByConflict?: Record<string, MLPrediction>;
+  mlByTrain?: Record<string, MLPrediction[]>;
 }

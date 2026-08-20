@@ -14,16 +14,30 @@ import { reportLovableError } from "../lib/lovable-error-reporting";
 import { TwinProvider, useTwin } from "@/twin/store";
 import { TopBar } from "@/components/ops/TopBar";
 
-/** Shown when the current window has no active trains, so an empty schematic is
- *  never mistaken for a broken scenario/what-if. */
-function EmptyNetworkBanner() {
-  const { emptyNetwork, emptyNetworkReason } = useTwin();
-  if (!emptyNetwork) return null;
-  return (
-    <div className="border-b border-amber-500/40 bg-amber-500/10 px-4 py-1.5 text-center text-xs font-medium text-amber-300">
-      {emptyNetworkReason ?? "No trains are active in this window — advance the clock or step forward."}
-    </div>
-  );
+/** Says plainly when the console has nothing to show, so an empty schematic is
+ *  never mistaken for a broken scenario. The backend is the only model, so if it
+ *  is unreachable the console says exactly that rather than quietly falling back
+ *  to a second, divergent simulation of its own. */
+function StatusBanner() {
+  const { connection, activeTrains, bundle } = useTwin();
+  if (connection !== "CONNECTED") {
+    return (
+      <div className="border-b border-red-500/40 bg-red-500/10 px-4 py-1.5 text-center text-xs font-medium text-red-300">
+        {connection === "RECONNECTING"
+          ? "Reconnecting to the twin…"
+          : "The twin backend is unreachable. Start it with `docker compose up -d`."}
+      </div>
+    );
+  }
+  if (bundle && activeTrains.length === 0) {
+    return (
+      <div className="border-b border-amber-500/40 bg-amber-500/10 px-4 py-1.5 text-center text-xs font-medium text-amber-300">
+        No trains are on the ground in this window — {bundle.kpis.scheduledAhead} services are
+        booked ahead. Let the clock run on.
+      </div>
+    );
+  }
+  return null;
 }
 
 function NotFoundComponent() {
@@ -142,7 +156,7 @@ function RootComponent() {
       <TwinProvider>
         <div className="flex h-screen min-h-0 flex-col bg-background">
           <TopBar />
-          <EmptyNetworkBanner />
+          <StatusBanner />
           {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
           <Outlet />
         </div>

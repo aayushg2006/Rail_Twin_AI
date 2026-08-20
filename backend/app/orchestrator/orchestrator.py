@@ -20,6 +20,7 @@ all.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -29,7 +30,7 @@ from ..config import settings
 from ..domain import dto
 from ..twin.engine import DelayEvent, SimulationEngine
 from ..twin.metrics import compute_kpis
-from ..twin.predict import predict, apply_action
+from ..twin.predict import apply_action, predict, project_state_at
 from ..twin.state import AppliedAction
 from ..optimize.safety import validate
 from ..network.net import network_pack, timetable_pack, freight_pack
@@ -38,6 +39,8 @@ VALID_SPEEDS = {1, 2, 5, 10, 20}
 SHADOW_EVERY_N_TICKS = 8          # shadows only feed KPI trends, not the map
 TREND_POINTS = 180
 
+logger = logging.getLogger("railtwin.orchestrator")
+
 
 class SimulationOrchestrator:
     def __init__(self, scenario_id: str = "BASE"):
@@ -45,13 +48,17 @@ class SimulationOrchestrator:
         self.playing = True
         self.speed = settings.default_speed
         self.horizon = settings.default_horizon_sec
+        self.horizon_offset = 0.0
         self._clients: set[Any] = set()
         self._task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
         self._tick_count = 0
+        self._tick_failures = 0
+        self._tick_error = ""
         self._cached_prediction = None
         self._cached_kpis = None
         self._cached_options: dict = {}
+        self._projected = None
         self._shadow_kpis: dict = {}
         self._trend: list[dict] = []
         self.decision_hook: Callable[[dict], None] | None = None
@@ -62,11 +69,13 @@ class SimulationOrchestrator:
             "ml": {"status": "DETERMINISTIC_FALLBACK", "reason": "Trained artifacts not loaded"},
         }
         self._suggestion_revision = 0
+        self._suggestion_fingerprint: tuple = ()
         self._suggestion_generated_at = 0.0
         self._last_decision_status: dict = {"status": "READY"}
         self.decisions: list[dict] = []
         self.persistence_status = "IN_MEMORY"
         self.scenario_store = None
+        self.ingest = None
         self._build(scenario_id)
 
     # ------------------------------------------------------------- lifecycle
@@ -100,31 +109,49 @@ class SimulationOrchestrator:
             self._task = None
 
     async def _run_loop(self) -> None:
+        """The simulation clock.
+
+        One bad tick must never stop the twin. Previously any exception in here
+        killed the task silently while /api/health went on reporting
+        `playing: true`, so the console looked alive with a frozen clock.
+        """
         interval = settings.tick_seconds
         while True:
             t0 = time.perf_counter()
-            async with self._lock:
-                if self.playing:
-                    dt = self.speed * interval
-                    self.engine.advance(dt)
-                    self.shadow_nothing.advance(dt)
-                    self.shadow_priority.advance(dt)
-                self._tick_count += 1
-                if self._tick_count % 2 == 0:
-                    self._refresh_derived()
-                if self._tick_count % SHADOW_EVERY_N_TICKS == 0:
-                    self._refresh_shadows()
-                bundle = self._build_bundle()
-            await self._broadcast(bundle)
+            bundle: dict | None = None
+            try:
+                async with self._lock:
+                    if self.playing:
+                        dt = self.speed * interval
+                        self.engine.advance(dt)
+                        self.shadow_nothing.advance(dt)
+                        self.shadow_priority.advance(dt)
+                    self._tick_count += 1
+                    if self._tick_count % 2 == 0:
+                        self._refresh_derived()
+                    if self._tick_count % SHADOW_EVERY_N_TICKS == 0:
+                        self._refresh_shadows()
+                    bundle = self._build_bundle()
+                self._tick_error = ""
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self._tick_error = f"{type(exc).__name__}: {exc}"
+                self._tick_failures += 1
+                logger.exception("simulation tick failed (%d so far)", self._tick_failures)
+            if bundle is not None:
+                await self._broadcast(bundle)
             await asyncio.sleep(max(0.0, interval - (time.perf_counter() - t0)))
 
     # --------------------------------------------------------------- derived
     def _refresh_derived(self) -> None:
-        self._suggestion_revision += 1
         self._suggestion_generated_at = self.engine.now
         astate = self.engine.analytic_state()
         self._cached_prediction = predict(astate, self.horizon)
         self._cached_kpis = compute_kpis(self.engine, astate, self._cached_prediction)
+        # A scrubbed view is the same twin projected forward, not a second model.
+        self._projected = (project_state_at(astate, self.horizon_offset)
+                           if self.horizon_offset > 0 else None)
         opts: dict = {}
         if self.options_provider is not None:
             try:
@@ -137,6 +164,19 @@ class SimulationOrchestrator:
             except Exception as exc:
                 opts["mlError"] = str(exc)
         self._cached_options = opts
+
+        # The revision exists so a controller cannot accept a recommendation
+        # that has since been superseded. It must therefore change only when the
+        # ADVICE changes - which conflicts are open and what is recommended for
+        # them. Bumping it on every recompute (4 Hz) meant no human click could
+        # ever be fresh, and every decision was silently dropped as stale.
+        fingerprint = tuple(
+            (cid, (rec or {}).get("optionId"))
+            for cid, rec in sorted((opts.get("recommendationByConflict") or {}).items())
+        )
+        if fingerprint != self._suggestion_fingerprint:
+            self._suggestion_fingerprint = fingerprint
+            self._suggestion_revision += 1
 
     def _shadow_kpi(self, engine: SimulationEngine) -> dict:
         astate = engine.analytic_state()
@@ -167,9 +207,19 @@ class SimulationOrchestrator:
         nothing = self._shadow_kpis.get("doNothing", {})
         priority = self._shadow_kpis.get("priorityRule", {})
         applied = sum(1 for d in self.decisions if d.get("outcome") != "REJECTED")
+        # A hold costs its time the moment it is issued, but only repays it when
+        # the conflict it prevents would have bitten. While one is still being
+        # served the comparison is mid-flight, and the console must say so
+        # instead of showing a bare negative number that reads as a regression.
+        in_flight = sum(
+            rt.pending_hold_sec + rt.hold_remaining(self.engine.now)
+            for rt in self.engine.trains.values() if not rt.finished
+        )
         return {
             "decisionsApplied": applied,
             "decisionsRejected": len(self.decisions) - applied,
+            "holdInFlightSec": round(in_flight, 1),
+            "settling": in_flight > 1.0,
             "vsDoNothingSec": round(nothing.get("totalLatenessSec", 0.0)
                                     - live.get("totalLatenessSec", 0.0), 1),
             "vsPriorityRuleSec": round(priority.get("totalLatenessSec", 0.0)
@@ -189,6 +239,9 @@ class SimulationOrchestrator:
             "playing": self.playing,
             "speed": self.speed,
             "simState": dto.sim_state_dict(self.engine),
+            "horizonOffsetSec": self.horizon_offset,
+            "projected": (dto.projected_dict(self.engine, self._projected)
+                          if self._projected else None),
             "prediction": dto.prediction_dict(pred),
             "kpis": kpis_map,
             "baselines": {**self._shadow_kpis, "ai": kpis_map},
@@ -213,14 +266,30 @@ class SimulationOrchestrator:
             "serviceDate": datetime.fromtimestamp(
                 wall_ms / 1000, tz=ZoneInfo("Asia/Kolkata")).date().isoformat(),
             "persistenceStatus": self.persistence_status,
+            "tickFailures": self._tick_failures,
+            "tickError": self._tick_error,
             "suggestionRevision": self._suggestion_revision,
             "suggestionGeneratedAt": self._suggestion_generated_at,
             "lastDecisionStatus": self._last_decision_status,
             "modelStatus": self.model_status,
             "scenario": self.engine.scenario_id,
+            "liveData": self._live_data_status(),
         }
         bundle.update(self._cached_options)
         return bundle
+
+    def _live_data_status(self) -> dict:
+        """What the console must say about where its numbers came from."""
+        ingest = getattr(self, "ingest", None)
+        observations = getattr(ingest, "observations", {}) if ingest else {}
+        return {
+            "mode": getattr(getattr(ingest, "client", None), "mode", "off"),
+            "enabled": bool(ingest and ingest.enabled),
+            "observedTrains": len(observations),
+            "observations": [o.as_dict() for o in observations.values()][:12],
+            "lastPollAt": getattr(ingest, "last_poll_at", None),
+            "freightNote": "Goods movements are synthetic - no public live feed exists.",
+        }
 
     # --------------------------------------------------------------- clients
     def add_client(self, ws: Any) -> None:
@@ -271,6 +340,13 @@ class SimulationOrchestrator:
             elif cmd == "set_horizon":
                 self.horizon = int(msg.get("horizonSec", self.horizon))
                 self._refresh_derived()
+            elif cmd == "set_horizon_offset":
+                # How far ahead the console is looking. The projection is done
+                # HERE, by the authoritative twin - the console used to run its
+                # own model for scrubbed frames, which could disagree with the
+                # numbers printed beside them.
+                self.horizon_offset = max(0.0, min(900.0, float(msg.get("offsetSec", 0))))
+                self._refresh_derived()
             elif cmd == "inject_event":
                 # Each engine needs its own event object; they mutate timestamps.
                 for eng in (self.engine, self.shadow_nothing, self.shadow_priority):
@@ -300,11 +376,19 @@ class SimulationOrchestrator:
         conflict_id = msg.get("conflictId")
         expected = msg.get("expectedRevision")
 
-        if expected is not None and int(expected) != self._suggestion_revision:
-            self._last_decision_status = {
-                "status": "STALE",
-                "reason": "The recommendation was superseded by a newer live frame"}
-            return
+        stale = expected is not None and int(expected) != self._suggestion_revision
+        if stale and outcome != "REJECTED":
+            # The advice moved on while the controller was reading it. That is
+            # only fatal if the conflict itself is gone; otherwise the action is
+            # re-validated against live state below and applied on its merits.
+            still_open = any(
+                c.id == conflict_id
+                for c in (self._cached_prediction.conflicts if self._cached_prediction else []))
+            if not still_open:
+                self._last_decision_status = {
+                    "status": "STALE",
+                    "reason": "That conflict was resolved before the command was sent"}
+                return
 
         current = next((c for c in (self._cached_prediction.conflicts
                                     if self._cached_prediction else [])

@@ -4,7 +4,6 @@ import { Timeline } from "@/components/ops/Timeline";
 import { ConflictPanel } from "@/components/ops/ConflictPanel";
 import { Inspector } from "@/components/ops/Inspector";
 import { TrainList } from "@/components/ops/TrainList";
-import { KpiBar } from "@/components/ops/KpiBar";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -43,7 +42,6 @@ function Console() {
           <Inspector />
         </div>
       </div>
-      <KpiBar />
     </main>
   );
 }

@@ -1,206 +1,182 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTwin } from "@/twin/store";
-import { fleetById } from "@/twin/scenario";
-import { mmss, signedMin } from "@/twin/format";
-import type { FailureMetrics } from "@/domain/types";
+import { countdown, minutes } from "@/twin/format";
 import { Btn, Panel, PanelHead, Row, Tag } from "./primitives";
 
+/**
+ * What the AI proposes, why, and what it costs.
+ *
+ * Removed: model status (#10), failure metrics (#11), the raw conflict code
+ * (#8) and the "Advisory system…" footer (#14). What remains is What / Why /
+ * Impact (#12) plus the controller's response.
+ */
 export function DecisionPanel({ className }: { className?: string }) {
-  const { recommendation, options, previewOption, selectedConflict, prediction, acknowledgedDecision, decide, setPreviewOptionId, decisionStatus, globalPlan, modelStatus } =
-    useTwin();
+  const {
+    recommendation,
+    options,
+    previewOption,
+    selectedConflict,
+    decide,
+    setPreviewOptionId,
+    bundle,
+  } = useTwin();
+
   const [modify, setModify] = useState(false);
   const [holdSec, setHoldSec] = useState(120);
   const [speedKmh, setSpeedKmh] = useState(40);
   const [note, setNote] = useState("");
 
-  const { mlByConflict } = useTwin();
-  const rec = recommendation?.optionId ? options.find((o) => o.id === recommendation.optionId) : null;
-  const target = previewOption ?? rec;
-  const ml = selectedConflict ? mlByConflict[selectedConflict.id] : undefined;
+  const recommended = recommendation?.optionId
+    ? options.find((o) => o.id === recommendation.optionId)
+    : null;
+  const target = previewOption ?? recommended ?? null;
 
-  if (acknowledgedDecision && !selectedConflict) {
-    const stillPredicted = prediction.conflicts.some((c) => c.id === acknowledgedDecision.conflictId);
-    const wasRejected = acknowledgedDecision.outcome === "REJECTED" || decisionStatus?.status === "REJECTED";
-    return (
-      <Panel className={className}>
-        <PanelHead title="Decision" meta={wasRejected ? "DECISION CLOSED" : "LIVE ACTION ACCEPTED"} tone={wasRejected ? "dim" : "ok"} />
-        <div className="px-3 py-4 text-[12px] text-muted-foreground">
-          <p className={wasRejected ? "text-critical" : "text-ok"}>
-            {wasRejected ? "Controller decision rejected." : acknowledgedDecision.outcome === "MODIFIED" ? "Modified action accepted." : "Action accepted."}
-          </p>
-          <p className="mt-1">{acknowledgedDecision.optionTitle}</p>
-          <p className="mt-2 text-[11px] text-faint">
-            {wasRejected
-              ? "The What-if preview is closed. No controller action was applied."
-              : "The What-if preview is closed. The action is now part of the live controller plan and remains subject to interlocking authority."}
-          </p>
-          {stillPredicted ? (
-            <p className="mt-2 text-[11px] text-warning">
-              The original conflict is still present in the current prediction; select it again to inspect a new What-if evaluation.
-            </p>
-          ) : (
-            <p className="mt-2 text-[11px] text-ok">The original conflict is no longer present in the current prediction.</p>
-          )}
-          <ModelStatus modelStatus={modelStatus} />
-        </div>
-      </Panel>
-    );
-  }
-
-  if (recommendation?.mode === "MONITORING") {
-    return (
-      <Panel className={className}>
-        <PanelHead title="Recommendation" meta="MONITORING · no intervention required" tone="ok" />
-        <div className="px-3 py-4 text-[12px] text-muted-foreground">
-          <p>{recommendation.rationale}</p>
-          <p className="mt-2 text-[11px] text-faint">{recommendation.expectedOutcome}</p>
-          <ModelStatus modelStatus={modelStatus} />
-          <FailureMetricsView metrics={recommendation.failureMetrics} />
-        </div>
-      </Panel>
-    );
-  }
+  /**
+   * Modify starts from the action being proposed, not from arbitrary defaults
+   * (#13). The old panel opened at hold=120s / speed=40 km/h whatever the
+   * conflict was, so "modify" silently discarded the whole calculation.
+   */
+  useEffect(() => {
+    if (!target) return;
+    setHoldSec(Math.round(target.action.holdSec ?? holdFallback(target.action.trainId, options)));
+    setSpeedKmh(Math.round(target.action.speedKmh ?? 40));
+  }, [target?.id, options]);
 
   if (!selectedConflict || !recommendation || !target) {
     return (
       <Panel className={className}>
-        <PanelHead title="Recommendation" meta="AI recommends · human decides" tone="dim" />
-        <div className="px-3 py-4 text-[12px] text-muted-foreground">
-          <p>{!selectedConflict ? "No conflict is selected; continue monitoring the current horizon." : recommendation?.rationale ?? "No safe action is currently available for this conflict."}</p>
-          <ModelStatus modelStatus={modelStatus} />
-          <FailureMetricsView metrics={recommendation?.failureMetrics} />
-        </div>
+        <PanelHead title="Recommendation" meta="AI proposes · controller decides" tone="dim" />
+        <p className="px-3 py-4 text-[12px] text-muted-foreground">
+          {recommendation?.rationale ??
+            "Select a predicted conflict to see the options for it."}
+        </p>
       </Panel>
     );
   }
 
-  const trainNo = fleetById[target.action.trainId]?.number ?? target.action.trainId;
+  const containment = recommendation.mode === "CONTAINMENT";
+  const ml = bundle?.mlByConflict?.[selectedConflict.id];
+
+  /** The modified action, re-costed against the option it started from. */
+  const modifiedHold = { kind: "HOLD" as const, trainId: target.action.trainId, holdSec };
+  const modifiedSpeed = {
+    kind: "SPEED_REGULATION" as const,
+    trainId: target.action.trainId,
+    speedKmh,
+  };
+  const enough = holdSec >= (target.action.holdSec ?? 0);
 
   return (
     <Panel className={className}>
       <PanelHead
         title="Recommendation"
-        meta="AI recommends · human decides"
-        tone={recommendation.mode === "CONTAINMENT" ? "warning" : "selected"}
+        meta={selectedConflict.resourceLabel}
+        tone={containment ? "warning" : "selected"}
         right={<Tag tone={target.safety.passed ? "ok" : "critical"}>Option {target.letter}</Tag>}
       />
       <div className="min-h-0 overflow-y-auto px-3 py-2">
-        {recommendation.mode === "CONTAINMENT" ? (
+        {containment && (
           <div className="mb-2 border border-warning/60 bg-warning/5 px-2 py-1.5 text-[11px]">
-            <div className="font-medium text-warning">Full resolution unavailable</div>
-            <div className="mt-0.5 text-muted-foreground">This safe action protects the movement but does not claim the blocked resource or residual conflicts are resolved.</div>
-          </div>
-        ) : null}
-        {globalPlan ? (
-          <div className="mb-2 border border-border px-2 py-1 text-[10px]">
-            Global plan: <span className="text-selected">{globalPlan.status}</span> · {globalPlan.clearedConflicts.length} cleared · {globalPlan.residualConflicts.length} residual
-          </div>
-        ) : null}
-        {decisionStatus && decisionStatus.status !== "READY" ? (
-          <p className={`mb-2 border px-2 py-1 text-[10.5px] ${decisionStatus.status === "STALE" || decisionStatus.status === "REJECTED" ? "border-critical/50 text-critical" : "border-ok/50 text-ok"}`}>
-            {decisionStatus.status}: {decisionStatus.reason ?? "live decision status"}
-          </p>
-        ) : null}
-        <div className="label-xs">What</div>
-        <p className="mt-0.5 text-[12.5px]">{target.title}</p>
-
-        <div className="label-xs mt-2">Why</div>
-        <p className="mt-0.5 text-[12px] text-muted-foreground">{recommendation.rationale}</p>
-        <p className="mt-1 text-[11px] text-faint">{recommendation.expectedOutcome}</p>
-        <ModelStatus modelStatus={modelStatus} />
-        <FailureMetricsView metrics={recommendation.failureMetrics} />
-
-        {ml ? (
-          <>
-            <div className="label-xs mt-2">ML conflict assessment</div>
-            <div className="mt-1 flex flex-wrap items-center gap-1.5">
-              <Tag tone={ml.value >= 0.5 ? "critical" : ml.value >= 0.25 ? "warning" : "ok"}>
-                {(ml.value * 100).toFixed(0)}% conflict prob
-              </Tag>
-              <Tag tone={ml.status === "OK" ? "ok" : "dim"}>
-                conf {(ml.confidence * 100).toFixed(0)}%
-              </Tag>
-              <span className="num text-[9.5px] text-faint">{ml.modelVersion}</span>
+            <div className="font-medium text-warning">Cannot be fully cleared</div>
+            <div className="mt-0.5 text-muted-foreground">
+              This protects the movement but does not claim the conflict is resolved.
             </div>
-            {ml.contributions.length ? (
-              <ul className="mt-1 space-y-0.5">
-                {ml.contributions.slice(0, 4).map((c) => (
-                  <li key={c.feature} className="num text-[10.5px] text-muted-foreground">
-                    <span className={c.contribution >= 0 ? "text-critical" : "text-ok"}>
-                      {c.contribution >= 0 ? "▲" : "▼"}
-                    </span>{" "}
-                    {c.feature.replace(/_/g, " ")}
-                    <span className="text-faint"> ({c.value})</span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            {ml.status !== "OK" ? (
-              <p className="mt-1 text-[10px] text-faint">
-                Low confidence — deterministic projection used; safety validation stays authoritative.
-              </p>
-            ) : null}
-          </>
-        ) : null}
+          </div>
+        )}
 
-        <div className="label-xs mt-2">Impact</div>
+        <div className="label-xs">What</div>
+        <p className="mt-0.5 text-[13px]">{target.title}</p>
+
+        <div className="label-xs mt-3">Why</div>
+        <p className="mt-0.5 text-[12px] leading-relaxed text-muted-foreground">
+          {recommendation.rationale}
+        </p>
+        {recommendation.costBreakdown && (
+          <p className="mt-1 text-[11px] text-faint">
+            {costSentence(target.passengerMinutes, target.freightDelaySec)}
+          </p>
+        )}
+
+        {ml && (
+          <p className="mt-2 text-[11px] text-faint">
+            Conflict likelihood {(ml.value * 100).toFixed(0)}% (model confidence{" "}
+            {(ml.confidence * 100).toFixed(0)}%
+            {ml.status !== "OK" ? ", low — projection is authoritative" : ""}).
+          </p>
+        )}
+
+        <div className="label-xs mt-3">Impact</div>
         <div className="mt-1">
-          <Row label="Conflict outcome" value={target.conflictResolved ? "Cleared" : `${target.residualConflicts} residual`} tone={target.conflictResolved ? "ok" : "critical"} />
-          <Row label="Network delay" value={signedMin(target.networkDelaySec)} />
-          <Row label="Passenger delay" value={signedMin(target.passengerDelaySec)} />
-          <Row label="Freight delay" value={signedMin(target.freightDelaySec)} tone="freight" />
-          <Row label="Throughput delta" value={`${target.throughputDelta >= 0 ? "+" : ""}${target.throughputDelta}`} />
-          <Row label="Time to conflict" value={`T+${mmss(selectedConflict.etaSec)}`} tone="warning" />
+          <Row
+            label="Conflict"
+            value={target.conflictResolved ? "Cleared" : `${target.residualConflicts} still open`}
+            tone={target.conflictResolved ? "ok" : "critical"}
+          />
+          <Row
+            label="Passengers delayed"
+            value={`${target.passengerMinutes.toFixed(0)} passenger-min`}
+            tone={target.passengerMinutes > 500 ? "warning" : "neutral"}
+          />
+          <Row label="Freight delayed" value={minutes(target.freightDelaySec)} tone="freight" />
+          <Row label="Whole section" value={minutes(target.networkDelaySec)} />
+          <Row label="Happens" value={countdown(selectedConflict.etaSec)} tone="warning" />
         </div>
 
-        <div className="label-xs mt-2">Alternatives</div>
-        <ul className="mt-0.5 space-y-0.5">
-          {recommendation.alternatives.map((a) => (
-            <li key={a} className="text-[11.5px] text-muted-foreground">
-              · {a}
-            </li>
-          ))}
-        </ul>
+        {recommendation.alternatives.length > 0 && (
+          <>
+            <div className="label-xs mt-3">Instead of</div>
+            <ul className="mt-0.5 space-y-0.5">
+              {recommendation.alternatives.map((a) => (
+                <li key={a.title} className="text-[11.5px] text-muted-foreground">
+                  · {a.title} — {a.passengerMinutes.toFixed(0)} passenger-min
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
 
-        {modify ? (
+        {modify && (
           <div className="mt-3 border border-border-strong bg-panel-raised p-2">
-            <div className="label-xs">Modify parameters for {trainNo}</div>
+            <div className="label-xs">Adjust the command</div>
             <label className="mt-2 flex items-center gap-2 text-[11px]">
-              <span className="label-xs w-20">Hold</span>
+              <span className="label-xs w-16">Hold</span>
               <input
                 type="range"
                 min={0}
-                max={480}
-                step={30}
+                max={Math.max(600, Math.round((target.action.holdSec ?? 0) * 2))}
+                step={10}
                 value={holdSec}
                 onChange={(e) => setHoldSec(Number(e.target.value))}
                 className="flex-1 accent-[var(--selected)]"
               />
-              <span className="num w-12 text-right">{mmss(holdSec)}</span>
+              <span className="num w-14 text-right">{holdSec}s</span>
             </label>
-            <label className="mt-1 flex items-center gap-2 text-[11px]">
-              <span className="label-xs w-20">Regulate</span>
+            {!enough && (
+              <p className="mt-1 text-[10.5px] text-warning">
+                Shorter than the {Math.round(target.action.holdSec ?? 0)}s the twin calculated —
+                the conflict may not clear. The backend re-validates before applying.
+              </p>
+            )}
+            <label className="mt-2 flex items-center gap-2 text-[11px]">
+              <span className="label-xs w-16">Regulate</span>
               <input
                 type="range"
                 min={15}
-                max={90}
+                max={Math.round(target.action.speedKmh ? target.action.speedKmh * 2 : 100)}
                 step={5}
                 value={speedKmh}
                 onChange={(e) => setSpeedKmh(Number(e.target.value))}
                 className="flex-1 accent-[var(--selected)]"
               />
-              <span className="num w-12 text-right">{speedKmh}</span>
+              <span className="num w-14 text-right">{speedKmh} km/h</span>
             </label>
             <div className="mt-2 flex gap-2">
               <Btn
                 variant="warn"
                 onClick={() => {
-                  decide(target, "MODIFIED", note || `Modified: hold ${mmss(holdSec)}`, {
-                    kind: "HOLD",
-                    trainId: target.action.trainId,
-                    holdSec,
-                  });
+                  decide(target, "MODIFIED", note || `Hold ${holdSec}s`, modifiedHold);
                   setModify(false);
+                  setNote("");
                 }}
               >
                 Apply hold
@@ -208,12 +184,9 @@ export function DecisionPanel({ className }: { className?: string }) {
               <Btn
                 variant="warn"
                 onClick={() => {
-                  decide(target, "MODIFIED", note || `Modified: regulate to ${speedKmh} km/h`, {
-                    kind: "SPEED_REGULATION",
-                    trainId: target.action.trainId,
-                    speedKmh,
-                  });
+                  decide(target, "MODIFIED", note || `Regulate to ${speedKmh} km/h`, modifiedSpeed);
                   setModify(false);
+                  setNote("");
                 }}
               >
                 Apply speed
@@ -223,12 +196,12 @@ export function DecisionPanel({ className }: { className?: string }) {
               </Btn>
             </div>
           </div>
-        ) : null}
+        )}
 
         <input
           value={note}
           onChange={(e) => setNote(e.target.value)}
-          placeholder="Controller note (recorded in the log)"
+          placeholder="Controller note (kept in the record)"
           className="mt-3 w-full border border-border bg-map px-2 py-1 text-[11.5px] outline-none focus:border-selected"
         />
 
@@ -257,54 +230,21 @@ export function DecisionPanel({ className }: { className?: string }) {
             Reject
           </Btn>
         </div>
-        <p className="mt-2 text-[10.5px] text-faint">
-          Advisory system. Movement authority stays with the interlocking and the section
-          controller.
-        </p>
       </div>
     </Panel>
   );
 }
 
-function ModelStatus({ modelStatus }: { modelStatus: { optimizer: { status: string; reason: string }; ml: { status: string; reason: string } } }) {
-  return (
-    <div className="mt-3 border-t border-border/60 pt-2 text-[10px] text-faint">
-      <div className="label-xs">Model status</div>
-      <div className="mt-1 grid grid-cols-2 gap-2">
-        <span>Optimizer: <b className="text-foreground">{modelStatus.optimizer.status}</b></span>
-        <span>ML: <b className="text-foreground">{modelStatus.ml.status}</b></span>
-      </div>
-      <div className="mt-1">{modelStatus.ml.reason}</div>
-    </div>
-  );
+/** The price of the command, the way a controller would say it. */
+function costSentence(passengerMinutes: number, freightDelaySec: number): string {
+  const parts: string[] = [];
+  if (passengerMinutes > 1) parts.push(`${passengerMinutes.toFixed(0)} passenger-minutes`);
+  if (freightDelaySec > 30) parts.push(`${(freightDelaySec / 60).toFixed(1)} min of freight time`);
+  if (parts.length === 0) return "Costs nothing measurable elsewhere on the section.";
+  return `Costs ${parts.join(" and ")}.`;
 }
 
-function FailureMetricsView({ metrics }: { metrics: FailureMetrics | undefined }) {
-  if (!metrics) return null;
-  return (
-    <div className="mt-3 border-t border-border/60 pt-2 text-[10.5px]">
-      <div className="label-xs">Failure metrics</div>
-      <div className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1 text-muted-foreground">
-        <span>Candidates: {metrics.candidateCount}</span>
-        <span>Safe: {metrics.safetyPassingCandidateCount}</span>
-        <span>Clearing: {metrics.conflictClearingCandidateCount}</span>
-        <span>Residual critical: {metrics.residualCriticalConflicts}</span>
-        <span>Separation: {metrics.actualSeparationSec ?? "—"} / {metrics.requiredSeparationSec ?? "—"} s</span>
-        <span>Deficit: {metrics.separationDeficitSec} s</span>
-        <span>Network delay: {signedMin(metrics.networkDelaySec)}</span>
-        <span>Weighted delay: {signedMin(metrics.weightedDelaySec)}</span>
-      </div>
-      <p className="mt-1 text-warning">Reason: {metrics.primaryFailureReason}</p>
-      {metrics.failedSafetyChecks.length ? (
-        <ul className="mt-1 space-y-0.5 text-critical">
-          {metrics.failedSafetyChecks.map((check) => <li key={check.id}>{check.label}: {check.detail}</li>)}
-        </ul>
-      ) : null}
-      {metrics.infeasibleReasons.length ? (
-        <ul className="mt-1 space-y-0.5 text-critical">
-          {metrics.infeasibleReasons.map((item) => <li key={item.candidate}>{item.candidate}: {item.reason}</li>)}
-        </ul>
-      ) : null}
-    </div>
-  );
+function holdFallback(trainId: string, options: { action: { trainId: string; holdSec?: number } }[]) {
+  const match = options.find((o) => o.action.trainId === trainId && o.action.holdSec);
+  return match?.action.holdSec ?? 120;
 }
