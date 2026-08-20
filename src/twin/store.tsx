@@ -22,6 +22,7 @@ import type {
 } from "@/domain/types";
 import { TwinSocket } from "@/data/wsSource";
 import { createProjector, type Projector } from "./projection";
+import { createGeoProjector, type GeoProjector } from "./geoprojection";
 
 export type SimSpeed = 1 | 2 | 5 | 10;
 
@@ -42,6 +43,10 @@ interface TwinContextValue {
   bundle: TwinBundle | null;
   network: RailNetwork | null;
   projector: Projector | null;
+  /** Real OpenStreetMap geometry, when the map is in geographic mode. */
+  geoProjector: GeoProjector | null;
+  mapView: "GEOGRAPHIC" | "SCHEMATIC";
+  setMapView: (v: "GEOGRAPHIC" | "SCHEMATIC") => void;
   connection: ConnectionStatus;
   /** Trains actually on the ground — scheduled ones never reach the map (#22). */
   activeTrains: TrainSnapshot[];
@@ -52,6 +57,9 @@ interface TwinContextValue {
   options: OptionOutcome[];
   recommendation: Recommendation | null;
   decisions: DecisionRecord[];
+  /** Live safety verdict on the action the controller is adjusting. */
+  proposedValidation: TwinBundle["proposedValidation"];
+  validateAction: (action: ResolutionAction) => void;
   selection: Selection;
   selectedTrainId: string | null;
   focusMode: boolean;
@@ -110,6 +118,9 @@ export function TwinProvider({ children }: { children: ReactNode }) {
   const [focusMode, setFocusMode] = useState(false);
   const [whatIfOpen, setWhatIfOpen] = useState(false);
   const [previewOptionId, setPreviewOptionId] = useState<string | null>(null);
+  // Conflicts the controller has already answered, so a dismissed one does not
+  // immediately re-open itself on the next frame.
+  const [handledIds, setHandledIds] = useState<Set<string>>(() => new Set());
   const [horizonOffset, setHorizonOffset] = useState(0);
   const [playing, setPlayingState] = useState(true);
   const [speed, setSpeedState] = useState<SimSpeed>(5);
@@ -149,6 +160,13 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     () => (network ? createProjector(network) : null),
     [network],
   );
+  const geoProjector = useMemo(
+    () => (network ? createGeoProjector(network) : null),
+    [network],
+  );
+  // Geographic by default, so the console can be read against RailRadar's own
+  // map; the straightened schematic stays a click away for making decisions.
+  const [mapView, setMapView] = useState<"GEOGRAPHIC" | "SCHEMATIC">("GEOGRAPHIC");
 
   // Only admitted, unfinished trains are on the ground. Scheduled services are
   // future bookings and must never be drawn as if they were running (#22).
@@ -207,6 +225,30 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     }
   }, [conflicts, selectedConflictId]);
 
+  /**
+   * Present the advice, do not wait to be asked.
+   *
+   * A decision-support console that lists a critical conflict and then sits
+   * there is not supporting anything. The most urgent unanswered conflict that
+   * actually HAS a recommendation opens itself; the controller can dismiss it,
+   * and a dismissed conflict stays dismissed.
+   */
+  useEffect(() => {
+    if (whatIfOpen || selectedConflictId) return;
+    const actionable = conflicts
+      .filter((c) => !handledIds.has(c.id))
+      .filter((c) => (bundle?.recommendationByConflict?.[c.id]?.optionId ?? null) !== null)
+      .sort(
+        (a, b) =>
+          Number(b.severity === "CRITICAL") - Number(a.severity === "CRITICAL") ||
+          a.etaSec - b.etaSec,
+      )[0];
+    if (!actionable) return;
+    setSelectedConflictId(actionable.id);
+    setSelection({ kind: "conflict", id: actionable.id });
+    setWhatIfOpen(true);
+  }, [conflicts, bundle, whatIfOpen, selectedConflictId, handledIds]);
+
   const send = useCallback((msg: Record<string, unknown>) => {
     socketRef.current?.send(msg);
   }, []);
@@ -231,6 +273,11 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     (id?: string) => {
       const target = id ?? selectedConflictId ?? conflicts[0]?.id;
       if (!target) return;
+      setHandledIds((ids) => {
+        const next = new Set(ids);
+        next.delete(target);
+        return next;
+      });
       setSelectedConflictId(target);
       setPreviewOptionId(null);
       setWhatIfOpen(true);
@@ -239,9 +286,13 @@ export function TwinProvider({ children }: { children: ReactNode }) {
   );
 
   const closeWhatIf = useCallback(() => {
+    if (selectedConflictId) {
+      setHandledIds((ids) => new Set(ids).add(selectedConflictId));
+    }
     setWhatIfOpen(false);
+    setSelectedConflictId(null);
     setPreviewOptionId(null);
-  }, []);
+  }, [selectedConflictId]);
 
   const selectConflict = useCallback(
     (id: string | null) => {
@@ -268,6 +319,19 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  /**
+   * Ask the twin whether a modified command would be permitted, BEFORE it can
+   * be issued. Safety is not advisory: an action the interlocking would refuse
+   * must be un-clickable, not rejected after the fact.
+   */
+  const validateAction = useCallback(
+    (action: ResolutionAction) => {
+      if (!selectedConflict) return;
+      send({ cmd: "validate_action", conflictId: selectedConflict.id, action });
+    },
+    [selectedConflict, send],
+  );
+
   const decide = useCallback(
     (
       option: OptionOutcome,
@@ -288,6 +352,7 @@ export function TwinProvider({ children }: { children: ReactNode }) {
         expectedRevision: bundle?.suggestionRevision,
         responseMode: option.responseClass,
       });
+      setHandledIds((ids) => new Set(ids).add(selectedConflict.id));
       setWhatIfOpen(false);
       setSelectedConflictId(null);
       setPreviewOptionId(null);
@@ -299,6 +364,7 @@ export function TwinProvider({ children }: { children: ReactNode }) {
   const loadScenario = useCallback(
     (id: ScenarioId) => {
       send({ cmd: "load_scenario", scenario: id });
+    setHandledIds(new Set());
       setSelectedConflictId(null);
       setWhatIfOpen(false);
       setSelectedTrainId(null);
@@ -312,6 +378,7 @@ export function TwinProvider({ children }: { children: ReactNode }) {
 
   const resetToBase = useCallback(() => {
     send({ cmd: "reset" });
+    setHandledIds(new Set());
     setSelectedConflictId(null);
     setWhatIfOpen(false);
     setSelection(null);
@@ -337,6 +404,9 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     bundle,
     network,
     projector,
+    geoProjector,
+    mapView,
+    setMapView,
     connection,
     activeTrains,
     conflicts,
@@ -345,6 +415,8 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     options,
     recommendation,
     decisions: bundle?.decisions ?? [],
+    proposedValidation: bundle?.proposedValidation ?? null,
+    validateAction,
     selection,
     selectedTrainId,
     focusMode,

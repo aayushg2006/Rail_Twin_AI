@@ -81,12 +81,24 @@ def platform_utilisation(engine, now: float) -> float:
     return min(1.0, occupied / (span * len(platforms)))
 
 
-def compute_kpis(engine, state: AnalyticState, prediction: Prediction) -> KPISet:
-    active = [st for st in state.trains.values() if st.admitted and not st.finished]
+def compute_kpis(engine, state: AnalyticState, prediction: Prediction,
+                 common_trains: set[str] | None = None) -> KPISet:
+    """`common_trains` restricts every figure to a shared set of services.
+
+    The three tracks on the RECORD page (AI, do-nothing, priority rule) can hold
+    DIFFERENT trains at the same instant: a held train stays in section longer,
+    so it inflates the AI denominator and makes "average lateness" incomparable.
+    Passing the intersection of admitted trains makes the columns mean the same
+    thing.
+    """
+    active = [st for st in state.trains.values()
+              if st.admitted and not st.finished
+              and (common_trains is None or st.train_id in common_trains)]
 
     lateness = {tid: rt.lateness_sec(engine.now, engine.service_epoch_sec)
                 for tid, rt in engine.trains.items()
-                if rt.admitted and not rt.finished}
+                if rt.admitted and not rt.finished
+                and (common_trains is None or tid in common_trains)}
     late_values = list(lateness.values())
     total_late = sum(v for v in late_values if v > 0)
     early = -sum(v for v in late_values if v < 0)

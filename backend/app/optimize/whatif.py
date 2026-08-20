@@ -46,6 +46,9 @@ class OptionEval:
     feasible: bool
     infeasible_reason: str | None = None
     response_class: str = "RESOLUTION"
+    # Absolute count of CRITICAL conflicts left on the network after this
+    # action, kept so `residual_conflicts` can be expressed as a delta.
+    critical_conflicts: int = 0
 
     def as_dict(self) -> dict:
         return {
@@ -63,6 +66,7 @@ class OptionEval:
             "infrastructureChange": self.infrastructure_change,
             "safety": self.safety,
             "residualConflicts": self.residual_conflicts,
+            "criticalConflicts": self.critical_conflicts,
             "feasible": self.feasible,
             "responseClass": self.response_class,
             **({"infeasibleReason": self.infeasible_reason} if self.infeasible_reason else {}),
@@ -92,16 +96,42 @@ def throughput_within(state: AnalyticState, horizon: float) -> int:
     return count
 
 
+def evaluate_do_nothing(base: AnalyticState, base_delays: dict[str, float],
+                        conflict: Conflict, horizon: float = HORIZON) -> OptionEval:
+    """What letting the conflict happen actually costs, measured the SAME way.
+
+    "Doing nothing" is not "nothing happens". Left alone, the interlocking
+    resolves the conflict itself: it holds the FOLLOWING movement at the
+    protecting signal until the resource is clear with its headway. So the
+    honest reference is that hold, evaluated through the identical projection
+    path every candidate uses - knock-on effects and all.
+
+    Modelling it as a literal no-op was wrong twice over. The projection is
+    free-running, so an unactioned conflict costs exactly zero in it, which made
+    the reference unbeatable and silenced the optimiser completely. And before
+    that, comparing a closed-form estimate against re-simulated options was
+    apples against oranges, which let the optimiser recommend actions the shadow
+    twins then measured as worse than doing nothing.
+    """
+    follower = conflict.train_b or conflict.train_a
+    shortfall = max(0.0, conflict.required_separation_sec - conflict.separation_sec)
+    forced = Candidate(
+        "OPT-NONE", "-", "Take no action (the signal holds the second train)",
+        AppliedAction("HOLD", follower, hold_sec=shortfall), "NONE")
+    return evaluate(base, base_delays, forced, conflict, horizon, reference=None)
+
+
 def evaluate(base: AnalyticState, base_delays: dict[str, float], cand: Candidate,
              conflict: Conflict, horizon: float = HORIZON,
-             response_class: str = "RESOLUTION") -> OptionEval:
+             response_class: str = "RESOLUTION",
+             reference: "OptionEval | None" = None) -> OptionEval:
     if cand.infeasible_reason:
         return OptionEval(
             cand.id, cand.letter, cand.title, cand.action, False, {},
             0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0,
             cand.infrastructure_change,
             {"passed": False, "checks": [], "mode": response_class},
-            0, False, cand.infeasible_reason, response_class)
+            0, False, cand.infeasible_reason, response_class, 0)
 
     after = apply_action(base, cand.action)
     pred = predict(after, horizon)
@@ -141,7 +171,13 @@ def evaluate(base: AnalyticState, base_delays: dict[str, float], cand: Candidate
             passenger += d
             pax_minutes += d * f.typical_load / 60.0
 
-    residual = sum(1 for c in pred.conflicts if c.severity == "CRITICAL")
+    critical_after = sum(1 for c in pred.conflicts if c.severity == "CRITICAL")
+    # Residual conflicts count RELATIVE to taking no action. As an absolute
+    # network-wide total it was near-identical across every option, so the
+    # `w.conflict * 1e6` term never discriminated between them and an action
+    # that CREATED a conflict was not penalised at all.
+    residual = (max(0, critical_after - reference.critical_conflicts)
+                if reference is not None else critical_after)
     thru_delta = throughput_within(after, horizon) - throughput_within(base, horizon)
 
     return OptionEval(
@@ -149,4 +185,4 @@ def evaluate(base: AnalyticState, base_delays: dict[str, float], cand: Candidate
         network, passenger, freight, pax_minutes, tonne_minutes, weighted,
         thru_delta, cand.infrastructure_change,
         validate(cand.action, after, conflict, resolved, response_class),
-        residual, True, None, response_class)
+        residual, True, None, response_class, critical_after)

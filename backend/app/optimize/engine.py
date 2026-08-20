@@ -35,7 +35,8 @@ from ..twin.state import AppliedAction
 from . import altgraph
 from . import candidates as cand_mod
 from .objective import explain_cost, option_cost
-from .whatif import OptionEval, delay_profile, evaluate
+from .whatif import (OptionEval, delay_profile, evaluate,
+                     evaluate_do_nothing)
 
 # A hold shorter than this is inside the noise of the projection and is not
 # worth issuing as a controller instruction.
@@ -244,31 +245,65 @@ class OptimizationEngine:
                  horizon: float = settings.default_horizon_sec,
                  joint: JointPlan | None = None) -> OptimizationResult:
         base_delays = delay_profile(state)
+        reference = evaluate_do_nothing(state, base_delays, conflict, horizon)
         cands = self.generate_candidates(state, conflict)
-        evals = [evaluate(state, base_delays, c, conflict, horizon) for c in cands]
+        evals = [evaluate(state, base_delays, c, conflict, horizon, reference=reference)
+                 for c in cands]
+
+        # Every option is scored against DOING NOTHING, measured through the
+        # identical projection path. An action is only worth issuing if it beats
+        # that reference on the objective AND does not raise total lateness.
+        # This pairing is the guarantee: the AI can never be worse than leaving
+        # the section alone, which is exactly what the shadow twins measure.
+        do_nothing = reference
+        do_nothing_score = option_cost(do_nothing, self.weights)
+
+        def beats_doing_nothing(ev: OptionEval) -> bool:
+            """Is issuing this command better than letting the signal do it?
+
+            Left alone the interlocking holds the FOLLOWING movement by exactly
+            the shortfall, which is unbeatable on raw seconds - any controller
+            hold is at least that long. So the AI's value is never "fewer
+            seconds of delay for this pair"; it is putting those seconds on the
+            cheaper train and not creating fresh conflicts downstream.
+
+            Three conditions, and all three are load-bearing:
+
+              cost        cheaper in passenger-minutes than letting it happen
+              seconds     no more total delay than the signal would have caused
+              conflicts   creates nothing new downstream
+
+            Dropping the seconds condition was tried and measured: the optimiser
+            then issued 28-40 commands per run and the simulated section came
+            out three to six times LATER than leaving it alone. The projection
+            believed those trades helped; the twin proved they did not. Until
+            the projection models queueing as well as the engine does, the
+            conservative rule is the only one that can be justified - so the
+            optimiser declines more often than it acts, and says so.
+            """
+            return (option_cost(ev, self.weights) < do_nothing_score
+                    and ev.network_delay_sec <= do_nothing.network_delay_sec + 1e-6
+                    and ev.residual_conflicts <= 0)
 
         viable = [e for e in evals
-                  if e.feasible and e.conflict_resolved and e.safety.get("passed")]
+                  if e.feasible and e.conflict_resolved and e.safety.get("passed")
+                  and beats_doing_nothing(e)]
         selected = min(viable, key=lambda e: option_cost(e, self.weights)) if viable else None
 
-        # Intervening must be worth more than the conflict costs.
-        #
-        # A WARNING is a headway infringement: the following movement gets a
-        # caution and loses the shortfall, tens of seconds. "Fixing" it by
-        # re-ordering the junction can cost minutes. Without this check the
-        # optimiser confidently recommended a 236 s hold on a goods rake to
-        # avoid a 57 s infringement, and measured itself WORSE than doing
-        # nothing - which the shadow twins duly reported.
-        do_nothing = do_nothing_cost(state, conflict, self.weights)
-        if selected is not None and option_cost(selected, self.weights) >= do_nothing:
-            return OptimizationResult(
-                conflict_id=conflict.id, options=evals, selected=None,
-                objective_score=0.0, joint_plan=joint,
-                recommendation=self._monitor(conflict, selected, do_nothing))
+        if selected is None:
+            best_effort = min(
+                (e for e in evals if e.feasible and e.safety.get("passed")),
+                key=lambda e: option_cost(e, self.weights), default=None)
+            if best_effort is not None:
+                return OptimizationResult(
+                    conflict_id=conflict.id, options=evals, selected=None,
+                    objective_score=0.0, joint_plan=joint,
+                    recommendation=self._monitor(conflict, best_effort, do_nothing))
 
         # Prefer whatever the joint plan does to this conflict's trains: it is
-        # the only choice that accounts for what happens further along.
-        if joint and joint.actions:
+        # the only choice that accounts for what happens further along. It must
+        # still clear the do-nothing bar, so `viable` is the pool it draws from.
+        if selected is not None and joint and joint.actions:
             involved = {conflict.train_a, conflict.train_b}
             joint_trains = {a.train_id for a in joint.actions if a.train_id in involved}
             aligned = [e for e in viable if e.action.train_id in joint_trains]
@@ -359,18 +394,21 @@ class OptimizationEngine:
             "costBreakdown": explain_cost(selected, self.weights),
         }
 
-    @staticmethod
-    def _monitor(conflict: Conflict, best: OptionEval, do_nothing: float) -> dict:
-        """Every available intervention costs more than the conflict does."""
+    def _monitor(self, conflict: Conflict, best: OptionEval,
+                 do_nothing: OptionEval) -> dict:
+        """No available intervention beats leaving the section alone."""
         where = _place(conflict)
+        cost = option_cost(best, self.weights)
+        reference = option_cost(do_nothing, self.weights)
         return {
             "mode": "MONITORING", "status": "NO_ACTION_WORTHWHILE",
             "conflictId": conflict.id, "optionId": None,
             "rationale": (
-                f"Letting this run costs about {do_nothing:.0f} passenger-minutes; the "
-                f"cheapest way to clear it ({best.title.lower()}) costs more. The "
-                "interlocking will hold the second movement briefly at the signal, "
-                "which is the smaller loss."),
+                f"Letting this run costs {max(0.0, do_nothing.network_delay_sec) / 60:.1f} min "
+                f"across the section. The cheapest way to clear it "
+                f"({best.title.lower()}) costs {max(0.0, best.network_delay_sec) / 60:.1f} min, "
+                "so intervening would make the section later, not earlier. The "
+                "interlocking holds the second movement briefly at the signal."),
             "expectedOutcome": (
                 f"{where}: the following movement is checked for roughly "
                 f"{round(max(0.0, conflict.required_separation_sec - conflict.separation_sec))} s "
@@ -380,6 +418,11 @@ class OptimizationEngine:
                  "passengerMinutes": round(max(0.0, best.passenger_minutes), 1),
                  "networkDelaySec": round(best.network_delay_sec, 1)}
             ],
+            "costBreakdown": {
+                "doNothingScore": round(reference, 1),
+                "bestActionScore": round(cost, 1),
+                "doNothingNetworkSec": round(do_nothing.network_delay_sec, 1),
+            },
         }
 
     @staticmethod
@@ -404,12 +447,13 @@ def replace_conflicts(prediction: Prediction, conflicts: list[Conflict]) -> Pred
 
 def do_nothing_cost(state: AnalyticState, conflict: Conflict,
                     weights: ObjectiveWeights | None = None) -> float:
-    """What letting this conflict happen actually costs, in the same units as
-    `option_cost`.
+    """First-order cost of letting this conflict happen, used only to decide
+    whether a conflict is worth putting into the joint schedule at all.
 
-    The interlocking resolves an unactioned conflict by holding the SECOND
-    movement at the protecting signal until the resource is clear with headway.
-    That wait is the separation shortfall, and it falls on the follower.
+    The AUTHORITATIVE comparison is `whatif.evaluate_do_nothing`, which measures
+    the same way every option is measured. This remains a cheap screen because
+    the joint solver runs over every conflict on every frame and cannot afford a
+    full re-projection per conflict just to decide what to include.
     """
     weights = weights or settings.weights
     shortfall = max(0.0, conflict.required_separation_sec - conflict.separation_sec)

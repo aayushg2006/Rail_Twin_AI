@@ -7,6 +7,13 @@
 import { defineConfig } from "@lovable.dev/vite-tanstack-config";
 
 export default defineConfig({
+  vite: {
+    server: {
+      // The source tree is a Windows bind mount into the container, where inotify
+      // never fires - without polling, every edit needs a container restart.
+      watch: { usePolling: true, interval: 400 },
+    },
+  },
   tanstackStart: {
     // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
     // nitro/vite builds from this

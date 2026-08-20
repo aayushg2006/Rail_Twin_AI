@@ -326,7 +326,8 @@ export interface NetworkLine {
 export interface NetworkPlatform {
   id: string;
   label: string;
-  side: "WEST" | "ISLAND" | "EAST" | string;
+  /** SIDE, or ISLAND-A / ISLAND-B / ISLAND-C as tagged in OSM (2;3, 4;5, 6;7). */
+  side: string;
   usage: string;
   serves: string[];
   lengthM: number;
@@ -346,8 +347,45 @@ export interface NetworkResource {
   capacity: number;
 }
 
+export interface GeoPoint {
+  lat: number;
+  lng: number;
+}
+
+export interface LocalPoint {
+  x: number;
+  y: number;
+}
+
+/** Real track geometry from OpenStreetMap, for the geographic map view. */
+export interface RailGeometry {
+  available: boolean;
+  source?: string;
+  licence?: string;
+  station?: { code: string; name: string; lat: number; lng: number };
+  localFrame?: { originLat: number; originLng: number };
+  ways: {
+    id: number;
+    kind: string;
+    name: string | null;
+    lengthM: number;
+    local: LocalPoint[];
+    points: GeoPoint[];
+  }[];
+  platforms: {
+    ref: string | null;
+    faces: string[];
+    lengthM: number;
+    local: LocalPoint[];
+    points: GeoPoint[];
+  }[];
+  switches: { id: number; lat: number; lng: number; local: LocalPoint }[];
+  signals: { id: number; lat: number; lng: number; local: LocalPoint }[];
+}
+
 export interface RailNetwork {
   units: "metres";
+  geo?: RailGeometry;
   datum: string;
   stationLimitM: number;
   modelledReachM: number;
@@ -411,6 +449,15 @@ export interface TwinBundle {
   serviceDate: string;
   suggestionRevision: number;
   lastDecisionStatus: { status: string; reason?: string };
+  /** Result of checking a controller's MODIFIED action, before it is applied. */
+  proposedValidation: {
+    conflictId: string | null;
+    action?: ResolutionAction;
+    passed: boolean;
+    clears: boolean;
+    reason: string;
+    checks: SafetyCheck[];
+  } | null;
   modelStatus: {
     optimizer: { status: string; reason: string };
     ml: { status: string; reason: string };

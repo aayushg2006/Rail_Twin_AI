@@ -6,9 +6,35 @@ SafetyValidation shape (passed + checks[]) the console's SafetyPanel renders.
 """
 from __future__ import annotations
 
-from ..network.net import resources as net_resources
+from ..network.net import platforms, resources as net_resources
+from ..network.routes import alternate_platforms
 from ..twin.predict import AnalyticState, Conflict
 from ..twin.state import AppliedAction
+
+
+def _route_check(action: AppliedAction, after: AnalyticState) -> tuple[bool, str]:
+    """Can the commanded route actually be set?"""
+    if action.kind not in ("ALTERNATE_ROUTE", "PLATFORM_REASSIGNMENT"):
+        return True, "No route change commanded"
+    target = action.platform_id or ""
+    if action.kind == "ALTERNATE_ROUTE":
+        if not action.route_id:
+            return False, "No route was named"
+        if action.route_id in after.unavailable_routes:
+            return False, f"Route {action.route_id} is not available"
+        return True, "Route set is available"
+    if not target:
+        return False, "No platform was named"
+    if target not in platforms:
+        return False, f"{target} is not a platform at this station"
+    if target in after.blocked_resources:
+        return False, f"{target} is withdrawn from service"
+    route = after.routes.get(action.train_id)
+    if route is not None:
+        admissible = set(alternate_platforms(route)) | {route.platform_id}
+        if target not in admissible:
+            return False, f"{target} cannot take this movement"
+    return True, f"{target} can take this movement"
 
 
 def validate(action: AppliedAction, after: AnalyticState, conflict: Conflict,
@@ -21,11 +47,11 @@ def validate(action: AppliedAction, after: AnalyticState, conflict: Conflict,
     speed_ok = (action.kind != "SPEED_REGULATION"
                 or ((action.speed_kmh or 0) >= 15
                     and (action.speed_kmh or 0) <= (st.line_speed_kmh if st else 0)))
-    # A re-platforming is only valid onto a face that is actually in service.
-    route_ok = (action.kind not in ("ALTERNATE_ROUTE", "PLATFORM_REASSIGNMENT")
-                or (bool(action.platform_id or action.route_id)
-                    and (action.platform_id or "") not in after.blocked_resources
-                    and (action.route_id or "") not in after.unavailable_routes))
+
+    # A re-platforming has to name a face that EXISTS, is in service, and can
+    # actually take this movement. Checking only "is it blocked" let a command
+    # through for a platform the station does not have.
+    route_ok, route_detail = _route_check(action, after)
     # A containment command may protect a movement from an unavailable
     # resource, but it must not claim that the resource has been restored.
     plt_ok = containment or conflict.resource_id not in after.blocked_resources
@@ -39,7 +65,7 @@ def validate(action: AppliedAction, after: AnalyticState, conflict: Conflict,
         {"id": "SPD", "label": "Commanded speed within line limit", "passed": speed_ok,
          "detail": "Within permissible section speed" if speed_ok else "Outside permissible band"},
         {"id": "RTE", "label": "Route availability", "passed": route_ok,
-         "detail": "Route can be set" if route_ok else "Route or platform not available"},
+         "detail": route_detail},
         {"id": "PLT", "label": "Platform / block availability", "passed": plt_ok,
          "detail": ("Movement protected before the unavailable resource"
                     if containment and conflict.resource_id in after.blocked_resources

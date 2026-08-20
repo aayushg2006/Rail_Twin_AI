@@ -11,6 +11,7 @@ import {
   VIEW_W,
   type Projector,
 } from "@/twin/projection";
+import { GEO_WAY_STYLE, type GeoProjector } from "@/twin/geoprojection";
 import { mmss } from "@/twin/format";
 
 const MIN_ZOOM = 0.7;
@@ -57,30 +58,50 @@ export function TwinMap() {
     focusMode,
     horizonOffset,
     previewOption,
+    geoProjector,
+    mapView,
+    setMapView,
   } = useTwin();
+
+  const geographic = mapView === "GEOGRAPHIC" && !!geoProjector?.available;
 
   const svgRef = useRef<SVGSVGElement>(null);
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState<ScreenPoint>({ x: 0, y: 0 });
   const drag = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
 
+  // The frame the view opens on. Geographic opens on the junction rather than
+  // the whole modelled extent, which is 16 km of approach either side.
+  const base = useMemo(
+    () =>
+      geographic && geoProjector
+        ? geoProjector.home
+        : { x: 0, y: 0, w: VIEW_W, h: VIEW_H },
+    [geographic, geoProjector],
+  );
+
   const view = useMemo(() => {
-    const w = VIEW_W / zoom;
-    const h = VIEW_H / zoom;
-    return { x: (VIEW_W - w) / 2 + pan.x, y: (VIEW_H - h) / 2 + pan.y, w, h };
-  }, [zoom, pan]);
+    const w = base.w / zoom;
+    const h = base.h / zoom;
+    return {
+      x: base.x + (base.w - w) / 2 + pan.x,
+      y: base.y + (base.h - h) / 2 + pan.y,
+      w,
+      h,
+    };
+  }, [zoom, pan, base]);
 
   /** Client pixel -> SVG user units, so zoom can be anchored on the cursor. */
   const toSvg = useCallback(
     (clientX: number, clientY: number): ScreenPoint => {
       const rect = svgRef.current?.getBoundingClientRect();
-      if (!rect) return { x: VIEW_W / 2, y: VIEW_H / 2 };
+      if (!rect) return { x: base.x + base.w / 2, y: base.y + base.h / 2 };
       return {
         x: view.x + ((clientX - rect.left) / rect.width) * view.w,
         y: view.y + ((clientY - rect.top) / rect.height) * view.h,
       };
     },
-    [view],
+    [view, base],
   );
 
   /**
@@ -99,17 +120,17 @@ export function TwinMap() {
         Math.max(MIN_ZOOM, zoom * Math.exp(-e.deltaY * intensity)),
       );
       if (next === zoom) return;
-      const w = VIEW_W / next;
-      const h = VIEW_H / next;
+      const w = base.w / next;
+      const h = base.h / next;
       const fx = (anchor.x - view.x) / view.w;
       const fy = (anchor.y - view.y) / view.h;
       setPan({
-        x: anchor.x - fx * w - (VIEW_W - w) / 2,
-        y: anchor.y - fy * h - (VIEW_H - h) / 2,
+        x: anchor.x - fx * w - (base.w - w) / 2,
+        y: anchor.y - fy * h - (base.h - h) / 2,
       });
       setZoom(next);
     },
-    [toSvg, view, zoom],
+    [toSvg, view, zoom, base],
   );
 
   const onPointerDown = (e: React.PointerEvent) => {
@@ -156,6 +177,10 @@ export function TwinMap() {
     );
   }
 
+  // Both projectors satisfy the same interface, so the movement layers are
+  // written once and drawn against whichever view is active.
+  const active: Projector = geographic && geoProjector ? geoProjector : projector;
+
   return (
     <div className="relative h-full w-full overflow-hidden bg-map">
       <svg
@@ -183,18 +208,24 @@ export function TwinMap() {
           opacity={0.5}
         />
 
-        {layers.infrastructure && <StationEnvelope projector={projector} />}
-        <Lines projector={projector} focused={!!focusIds} selection={selection} select={select} />
-        {layers.infrastructure && <Platforms projector={projector} />}
-        {layers.infrastructure && <CorridorLabels projector={projector} />}
+        {geographic && geoProjector ? (
+          <GeoInfrastructure projector={geoProjector} show={layers.infrastructure} />
+        ) : (
+          <>
+            {layers.infrastructure && <StationEnvelope projector={projector} />}
+            <Lines projector={projector} focused={!!focusIds} selection={selection} select={select} />
+            {layers.infrastructure && <Platforms projector={projector} />}
+            {layers.infrastructure && <CorridorLabels projector={projector} />}
+          </>
+        )}
 
-        {layers.predicted && <PredictedPaths projector={projector} dim={dim} />}
+        {layers.predicted && <PredictedPaths projector={active} dim={dim} />}
         {layers.decision && previewOption && (
-          <ProposedPath projector={projector} trainId={previewOption.action.trainId} />
+          <ProposedPath projector={active} trainId={previewOption.action.trainId} />
         )}
         {layers.predicted && (
           <Conflicts
-            projector={projector}
+            projector={active}
             conflicts={conflicts}
             selectedId={selectedConflict?.id ?? null}
             onSelect={selectConflict}
@@ -202,7 +233,7 @@ export function TwinMap() {
         )}
         {layers.live && (
           <Trains
-            projector={projector}
+            projector={active}
             trains={activeTrains}
             selectedId={selectedTrainId}
             onSelect={selectTrain}
@@ -215,12 +246,39 @@ export function TwinMap() {
       <div className="pointer-events-none absolute top-3 left-3 flex flex-col gap-1">
         <div className="label-xs">Vasai Road Jn · operational schematic</div>
         <div className="num text-[11px] text-muted-foreground">
-          {horizonOffset > 0 ? `PROJECTED T+${mmss(horizonOffset)}` : "LIVE"} · distances
-          in metres{focusIds ? " · FOCUS" : ""}
+          {horizonOffset > 0 ? `PROJECTED T+${mmss(horizonOffset)}` : "LIVE"} ·{" "}
+          {geographic ? "real track geometry" : "schematic"} · distances in metres
+          {focusIds ? " · FOCUS" : ""}
         </div>
+        {geographic && geoProjector?.geometry?.licence && (
+          <div className="text-[9px] text-faint">{geoProjector.geometry.licence}</div>
+        )}
       </div>
 
       <div className="absolute top-3 right-3 flex items-center gap-1">
+        {geoProjector?.available && (
+          <div className="mr-2 flex items-center gap-px">
+            {(
+              [
+                ["GEOGRAPHIC", "Real map"],
+                ["SCHEMATIC", "Schematic"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setMapView(value)}
+                className={`font-cond border px-2 py-[3px] text-[10.5px] tracking-[0.1em] uppercase ${
+                  mapView === value
+                    ? "border-selected bg-selected/12 text-selected"
+                    : "border-border bg-panel text-faint"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         {(
           [
             ["infrastructure", "Infra"],
@@ -273,6 +331,124 @@ export function TwinMap() {
         <span className="num ml-2 text-[10px] text-faint">{zoom.toFixed(1)}×</span>
       </div>
     </div>
+  );
+}
+
+/**
+ * The real Vasai Road, drawn from OpenStreetMap: 39 track ways, the six actual
+ * turnouts, five signals, and the three island platforms tagged 2;3, 4;5 and
+ * 6;7. This is the same railway RailRadar shows, at the same coordinates.
+ */
+function GeoInfrastructure({
+  projector,
+  show,
+}: {
+  projector: GeoProjector;
+  show: boolean;
+}) {
+  const geo = projector.geometry;
+  const { select, selection, bundle } = useTwin();
+  if (!geo) return null;
+  const blocked = new Set(bundle?.simState.blockedResources ?? []);
+
+  return (
+    <g>
+      {geo.ways.map((way) => {
+        const style = GEO_WAY_STYLE[way.kind] ?? GEO_WAY_STYLE["OTHER"]!;
+        return (
+          <polyline
+            key={way.id}
+            points={poly(way.local.map((p) => projector.local(p.x, p.y)))}
+            fill="none"
+            stroke={style.stroke}
+            strokeWidth={style.width}
+            strokeDasharray={style.dash}
+            strokeOpacity={style.opacity ?? 1}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        );
+      })}
+
+      {show &&
+        geo.platforms.map((pf) => {
+          const pts = pf.local.map((p) => projector.local(p.x, p.y));
+          const out = blocked.has(pf.faces[0] ?? "") || blocked.has(pf.faces[1] ?? "");
+          const on =
+            selection?.kind === "platform" && pf.faces.includes(selection.id);
+          const cx = pts.reduce((a, p) => a + p.x, 0) / Math.max(1, pts.length);
+          const cy = pts.reduce((a, p) => a + p.y, 0) / Math.max(1, pts.length);
+          return (
+            <g
+              key={pf.ref ?? pf.faces.join()}
+              data-pickable
+              className="cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                const face = pf.faces[0];
+                select(on || !face ? null : { kind: "platform", id: face });
+              }}
+            >
+              <polygon
+                points={poly(pts)}
+                fill={out ? "var(--critical)" : "var(--platform)"}
+                fillOpacity={out ? 0.3 : 0.55}
+                stroke={on ? "var(--selected)" : out ? "var(--critical)" : "var(--border-strong)"}
+                strokeWidth={on ? 1.6 : 1}
+              />
+              <text
+                x={cx}
+                y={cy + 3}
+                textAnchor="middle"
+                fontSize={7}
+                fontFamily="var(--font-cond)"
+                letterSpacing="0.06em"
+                fill="var(--foreground)"
+              >
+                {pf.faces.join(" / ")}
+              </text>
+            </g>
+          );
+        })}
+
+      {show && (
+        <g>
+          {geo.switches.map((sw) => {
+            const p = projector.local(sw.local.x, sw.local.y);
+            return (
+              <g key={sw.id}>
+                <path
+                  d={`M${p.x - 3} ${p.y + 3} L${p.x} ${p.y - 3} L${p.x + 3} ${p.y + 3}`}
+                  fill="none"
+                  stroke="var(--warning)"
+                  strokeWidth={1.1}
+                />
+              </g>
+            );
+          })}
+          {geo.signals.map((sig) => {
+            const p = projector.local(sig.local.x, sig.local.y);
+            return (
+              <circle key={sig.id} cx={p.x} cy={p.y} r={2} fill="var(--ok)" fillOpacity={0.8} />
+            );
+          })}
+        </g>
+      )}
+
+      {show && geo.station && (
+        <text
+          x={projector.latLng(geo.station.lat, geo.station.lng).x}
+          y={projector.latLng(geo.station.lat, geo.station.lng).y - 26}
+          textAnchor="middle"
+          fontSize={10}
+          fontFamily="var(--font-cond)"
+          letterSpacing="0.14em"
+          fill="var(--muted-foreground)"
+        >
+          VASAI ROAD JN
+        </text>
+      )}
+    </g>
   );
 }
 

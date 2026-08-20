@@ -83,12 +83,21 @@ class Settings(BaseSettings):
     #   live    call the API, subject to the monthly budget below
     railradar_mode: str = "off"
     railradar_api_key: str | None = Field(default=None)
-    railradar_base_url: str = "https://railradar.in/api"
+    railradar_base_url: str = "https://api.railradar.in"
     railradar_station: str = "BSR"
     # Hard cap. Once spent, the client refuses to call until the month rolls.
     railradar_monthly_budget: int = 1000
-    railradar_poll_seconds: int = 1200      # 20 min - ~72 calls/day at 1 train
-    railradar_watchlist_size: int = 6       # trains polled each cycle
+    # Two cadences. The board is one request for the whole station; per-train
+    # detail is one request each and only for services inside the section.
+    # 60 s + 300 s is roughly 130 calls/hour, so the 1,000/month allowance is
+    # about 8 hours of continuous running - hence `reserve`, below which the
+    # service slows down and then falls back to the recorded feed.
+    railradar_board_seconds: float = 60.0
+    railradar_detail_seconds: float = 300.0
+    railradar_reserve: int = 150
+    railradar_poll_seconds: int = 60        # legacy alias, kept for compatibility
+    railradar_detail_max: int = 6           # per-train detail calls per cycle
+    railradar_watchlist_size: int = 6       # legacy alias, kept for compatibility
     railradar_cache_ttl_seconds: int = 900
     railradar_timeout_seconds: float = 8.0
     railradar_replay_file: str = "data/railradar-replay.json"

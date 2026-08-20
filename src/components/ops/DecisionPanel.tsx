@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import type { ResolutionAction } from "@/domain/types";
 import { useTwin } from "@/twin/store";
 import { countdown, minutes } from "@/twin/format";
 import { Btn, Panel, PanelHead, Row, Tag } from "./primitives";
@@ -19,9 +20,12 @@ export function DecisionPanel({ className }: { className?: string }) {
     decide,
     setPreviewOptionId,
     bundle,
+    proposedValidation,
+    validateAction,
   } = useTwin();
 
   const [modify, setModify] = useState(false);
+  const [mode, setMode] = useState<"HOLD" | "SPEED">("HOLD");
   const [holdSec, setHoldSec] = useState(120);
   const [speedKmh, setSpeedKmh] = useState(40);
   const [note, setNote] = useState("");
@@ -40,7 +44,21 @@ export function DecisionPanel({ className }: { className?: string }) {
     if (!target) return;
     setHoldSec(Math.round(target.action.holdSec ?? holdFallback(target.action.trainId, options)));
     setSpeedKmh(Math.round(target.action.speedKmh ?? 40));
+    setMode(target.action.kind === "SPEED_REGULATION" ? "SPEED" : "HOLD");
   }, [target?.id, options]);
+
+  // Re-check with the twin whenever the proposed command changes. Debounced so
+  // dragging a slider does not spam the socket.
+  const trainId = target?.action.trainId ?? "";
+  useEffect(() => {
+    if (!modify || !trainId || !selectedConflict) return;
+    const action: ResolutionAction =
+      mode === "HOLD"
+        ? { kind: "HOLD", trainId, holdSec }
+        : { kind: "SPEED_REGULATION", trainId, speedKmh };
+    const timer = window.setTimeout(() => validateAction(action), 180);
+    return () => window.clearTimeout(timer);
+  }, [modify, mode, holdSec, speedKmh, trainId, selectedConflict, validateAction]);
 
   if (!selectedConflict || !recommendation || !target) {
     return (
@@ -57,14 +75,20 @@ export function DecisionPanel({ className }: { className?: string }) {
   const containment = recommendation.mode === "CONTAINMENT";
   const ml = bundle?.mlByConflict?.[selectedConflict.id];
 
-  /** The modified action, re-costed against the option it started from. */
-  const modifiedHold = { kind: "HOLD" as const, trainId: target.action.trainId, holdSec };
-  const modifiedSpeed = {
-    kind: "SPEED_REGULATION" as const,
-    trainId: target.action.trainId,
-    speedKmh,
-  };
-  const enough = holdSec >= (target.action.holdSec ?? 0);
+  const pending: ResolutionAction =
+    mode === "HOLD"
+      ? { kind: "HOLD", trainId: target.action.trainId, holdSec }
+      : { kind: "SPEED_REGULATION", trainId: target.action.trainId, speedKmh };
+
+  // The verdict only counts if it is about the action currently on the sliders.
+  const verdict =
+    proposedValidation &&
+    proposedValidation.conflictId === selectedConflict.id &&
+    proposedValidation.action?.kind === pending.kind &&
+    (proposedValidation.action?.holdSec ?? null) === (pending.holdSec ?? null) &&
+    (proposedValidation.action?.speedKmh ?? null) === (pending.speedKmh ?? null)
+      ? proposedValidation
+      : null;
 
   return (
     <Panel className={className}>
@@ -151,12 +175,6 @@ export function DecisionPanel({ className }: { className?: string }) {
               />
               <span className="num w-14 text-right">{holdSec}s</span>
             </label>
-            {!enough && (
-              <p className="mt-1 text-[10.5px] text-warning">
-                Shorter than the {Math.round(target.action.holdSec ?? 0)}s the twin calculated —
-                the conflict may not clear. The backend re-validates before applying.
-              </p>
-            )}
             <label className="mt-2 flex items-center gap-2 text-[11px]">
               <span className="label-xs w-16">Regulate</span>
               <input
@@ -170,26 +188,51 @@ export function DecisionPanel({ className }: { className?: string }) {
               />
               <span className="num w-14 text-right">{speedKmh} km/h</span>
             </label>
+
+            {/* Safety is checked by the twin on every adjustment. A command the
+                interlocking would refuse cannot be issued at all - the control
+                is disabled and says why, rather than accepting the click and
+                rejecting it afterwards. */}
+            <div className="mt-2 border-t border-border/60 pt-2">
+              {verdict === null ? (
+                <p className="text-[10.5px] text-faint">Checking with the interlocking…</p>
+              ) : verdict.passed ? (
+                <p className="text-[10.5px] text-ok">
+                  Permitted{verdict.clears ? " — clears the conflict" : " — does not clear the conflict"}.
+                </p>
+              ) : (
+                <p className="text-[10.5px] text-critical">Refused: {verdict.reason}</p>
+              )}
+              {verdict && !verdict.passed && verdict.checks.length > 0 && (
+                <ul className="mt-1 space-y-0.5">
+                  {verdict.checks
+                    .filter((c) => !c.passed)
+                    .map((c) => (
+                      <li key={c.id} className="text-[10px] text-critical">
+                        · {c.label}: {c.detail}
+                      </li>
+                    ))}
+                </ul>
+              )}
+            </div>
+
             <div className="mt-2 flex gap-2">
               <Btn
                 variant="warn"
+                disabled={!verdict?.passed}
                 onClick={() => {
-                  decide(target, "MODIFIED", note || `Hold ${holdSec}s`, modifiedHold);
+                  decide(target, "MODIFIED", note || describe(pending), pending);
                   setModify(false);
                   setNote("");
                 }}
               >
-                Apply hold
+                Apply
               </Btn>
-              <Btn
-                variant="warn"
-                onClick={() => {
-                  decide(target, "MODIFIED", note || `Regulate to ${speedKmh} km/h`, modifiedSpeed);
-                  setModify(false);
-                  setNote("");
-                }}
-              >
-                Apply speed
+              <Btn active={mode === "HOLD"} onClick={() => setMode("HOLD")}>
+                Hold
+              </Btn>
+              <Btn active={mode === "SPEED"} onClick={() => setMode("SPEED")}>
+                Regulate
               </Btn>
               <Btn variant="quiet" onClick={() => setModify(false)}>
                 Cancel
@@ -242,6 +285,13 @@ function costSentence(passengerMinutes: number, freightDelaySec: number): string
   if (freightDelaySec > 30) parts.push(`${(freightDelaySec / 60).toFixed(1)} min of freight time`);
   if (parts.length === 0) return "Costs nothing measurable elsewhere on the section.";
   return `Costs ${parts.join(" and ")}.`;
+}
+
+function describe(action: ResolutionAction): string {
+  if (action.kind === "HOLD") return `Hold ${Math.round(action.holdSec ?? 0)}s`;
+  if (action.kind === "SPEED_REGULATION")
+    return `Regulate to ${Math.round(action.speedKmh ?? 0)} km/h`;
+  return action.kind;
 }
 
 function holdFallback(trainId: string, options: { action: { trainId: string; holdSec?: number } }[]) {

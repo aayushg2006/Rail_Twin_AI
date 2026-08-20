@@ -36,23 +36,20 @@ def test_live_mode_without_a_key_falls_back_instead_of_failing():
 
 
 @pytest.mark.asyncio
-async def test_off_mode_never_returns_an_observation():
+async def test_off_mode_never_touches_the_network():
     client = RailRadarClient(mode="off", api_key="")
-    assert await client.live_status("12345", time.time()) is None
+    assert await client.station_board() == []
+    assert await client.train_detail("12345") is None
 
 
 @pytest.mark.asyncio
-async def test_replay_serves_recorded_readings_and_caches_them():
+async def test_replay_serves_the_whole_recorded_board():
     client = RailRadarClient(mode="replay", api_key="")
     if not client._replay:
         pytest.skip("replay feed not present in this environment")
-    number = next(iter(client._replay))
-    now = time.time()
-    first = await client.live_status(number, now)
-    assert first is not None and first.source == "replay"
-    # Second read inside the TTL must not re-read the feed.
-    again = await client.live_status(number, now + 1)
-    assert again is first
+    rows = await client.station_board()
+    assert len(rows) == len(client._replay)
+    assert all(o.source == "replay" for o in rows)
 
 
 @pytest.mark.asyncio
@@ -62,12 +59,62 @@ async def test_replay_spends_no_budget():
     if not client._replay:
         pytest.skip("replay feed not present")
     before = await client.budget.used()
-    for number in list(client._replay)[:3]:
-        await client.live_status(number, time.time())
+    await client.station_board()
+    await client.train_detail(next(iter(client._replay)))
     assert await client.budget.used() == before
 
 
-def test_parses_the_real_railradar_shape():
+def test_parses_the_real_station_board():
+    """One board row, exactly as the live API returns it."""
+    row = {
+        "train": {"number": "91053", "name": "Virar Mumbai EMU", "type": "EMU",
+                  "source": "CCG", "destination": "VR",
+                  "runDays": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]},
+        "stop": {"sequence": 29, "arrival": "02:19", "departure": "02:19",
+                 "day": 1, "distance": 51.6, "isHalt": True, "platform": None},
+        "live": {"type": "at-station", "startDate": "2026-08-21",
+                 "expectedArrivalTime": "2026-08-21T02:25:00+05:30",
+                 "delayMinutes": 6},
+    }
+    obs = RailRadarClient._from_board_row(row, "fallback")
+    assert obs is not None
+    assert obs.number == "91053"
+    assert obs.lateness_sec == 6 * 60
+    assert obs.distance_km == 51.6
+    assert obs.scheduled_departure == "02:19"
+    assert obs.status == "at-station"
+    assert obs.running is True
+
+
+def test_the_board_ignores_a_row_it_cannot_read():
+    assert RailRadarClient._from_board_row({}, "t") is None
+    assert RailRadarClient._from_board_row({"train": {}}, "t") is None
+    assert RailRadarClient._from_board_row("nonsense", "t") is None
+
+
+def test_detail_pulls_the_platform_and_section_speed_from_the_route():
+    """The per-train endpoint is the only place these appear."""
+    payload = {"success": True, "data": {
+        "trainNumber": "93002", "status": "running", "isLive": True,
+        "lastUpdatedAt": "2026-08-21T05:40:00+05:30",
+        "currentLocation": {"stationCode": "BYR", "status": "departed",
+                            "delayMinutes": 3},
+        "train": {"name": "Dahanu Road - Churchgate Fast", "type": "EMU"},
+        "route": [
+            {"sequence": 27, "stationCode": "BYR", "platform": "1", "distance": 43.3},
+            {"sequence": 29, "stationCode": "BSR", "platform": "5", "distance": 51.6,
+             "scheduledDeparture": "2026-08-21T05:57:00+05:30",
+             "speedToNextStationKmph": 63},
+        ]}}
+    obs = RailRadarClient._from_detail("93002", payload, "BSR")
+    assert obs is not None
+    assert obs.platform == "5"            # from the BSR row, not BYR
+    assert obs.speed_to_next_kmph == 63
+    assert obs.distance_km == 51.6
+    assert obs.lateness_sec == 180
+
+
+def test_legacy_parse_shape_retained():
     """Captured from the live API, trimmed to the fields we consume."""
     payload = {
         "success": True,
@@ -84,7 +131,7 @@ def test_parses_the_real_railradar_shape():
             "route": [{"sequence": 1, "stationCode": "NZM"}],
         },
     }
-    obs = RailRadarClient._parse("12284", payload)
+    obs = RailRadarClient._from_detail("12284", payload, "NZM")
     assert obs is not None
     assert obs.lateness_sec == 14 * 60
     assert obs.last_station == "NZM"          # nested under currentLocation
@@ -95,17 +142,17 @@ def test_parses_the_real_railradar_shape():
 def test_a_train_that_has_not_started_is_not_treated_as_on_time():
     """delayMinutes is 0 before departure; assimilating that would overwrite
     whatever the twin had legitimately inferred."""
-    obs = RailRadarClient._parse("12284", {
+    obs = RailRadarClient._from_detail("12284", {
         "data": {"delayMinutes": 0, "status": "not-started",
                  "currentLocation": {"stationCode": "NZM"}},
-    })
+    }, "NZM")
     assert obs is not None and obs.lateness_sec == 0
     assert obs.running is False
     assert obs.as_dict()["usable"] is False
 
 
 def test_response_parsing_is_defensive_about_field_names():
-    parse = RailRadarClient._parse
+    parse = lambda n, p: RailRadarClient._from_detail(n, p, "BSR")
     assert parse("1", {"data": {"delayMinutes": 7, "lastStation": "VR"}}).lateness_sec == 420
     assert parse("1", {"delay": 3, "currentStation": {"code": "NSP"}}).last_station == "NSP"
     # An upstream rename must degrade to "no observation", never a wrong one.
@@ -128,7 +175,7 @@ def test_watchlist_picks_passenger_services_near_their_booked_time():
 
     orch = SimulationOrchestrator("BASE")
     service = IngestionService(orch, RailRadarClient(mode="replay", api_key=""))
-    watch = service.watchlist()
+    watch = service.in_section()
     assert watch, "watchlist should not be empty at the demo clock"
     assert len(watch) <= 8
     assert len(set(watch)) == len(watch), "no duplicate train numbers"
@@ -146,7 +193,7 @@ def test_assimilation_reaches_the_shadow_twins_too():
 
     orch = SimulationOrchestrator("BASE")
     service = IngestionService(orch, RailRadarClient(mode="replay", api_key=""))
-    number = service.watchlist()[0]
+    number = (service.in_section() or ["91053"])[0]
     service._assimilate([Observation(number, 540.0, "VR", "now", "replay")])
     for engine in (orch.engine, orch.shadow_nothing, orch.shadow_priority):
         assert engine.observed_delay_sec.get(number) == 540.0
@@ -165,3 +212,62 @@ def test_replay_feed_declares_that_it_is_not_real():
             if pack["provenance"] == "synthetic":
                 assert "NOT real observations" in pack["provenanceNote"]
             return
+
+
+@pytest.mark.asyncio
+async def test_a_not_started_train_still_yields_its_platform_and_section_speed():
+    """The delay of a train that has not left its origin is meaningless, but the
+    platform it is booked into and the speed of the section ahead are not. The
+    first cut of the gate threw the whole record away and the console never saw
+    a live platform or a live speed."""
+    from app.ingest.service import IngestionService
+    from app.orchestrator.orchestrator import SimulationOrchestrator
+
+    orch = SimulationOrchestrator("BASE")
+    service = IngestionService(orch, RailRadarClient(mode="replay", api_key=""))
+    number = (service.in_section() or ["91053"])[0]
+
+    obs = Observation(number, 0.0, "CCG", "now", "detail",
+                      status="not-started", platform="5",
+                      speed_to_next_kmph=63.0)
+    assert obs.running is False
+    assert service._record(obs) is True, "the reading is still worth assimilating"
+
+    before = orch.engine.observed_delay_sec.get(number)
+    service._assimilate([obs])
+    assert orch.engine.observed_delay_sec.get(number) == before, \
+        "a not-started train must not be assimilated as on time"
+    for engine in (orch.engine, orch.shadow_nothing, orch.shadow_priority):
+        assert engine.observed_platform.get(number) == "PF5"
+        assert engine.observed_speed_kmh.get(number) == pytest.approx(63.0)
+
+
+@pytest.mark.asyncio
+async def test_a_bare_not_started_reading_is_still_refused():
+    """Without a platform or a speed there is nothing in it worth having."""
+    from app.ingest.service import IngestionService
+    from app.orchestrator.orchestrator import SimulationOrchestrator
+
+    orch = SimulationOrchestrator("BASE")
+    service = IngestionService(orch, RailRadarClient(mode="replay", api_key=""))
+    obs = Observation("99999", 0.0, "CCG", "now", "board", status="not-started")
+    assert service._record(obs) is False
+
+
+def test_detail_calls_are_spent_on_trains_that_are_actually_moving():
+    """The twin's clock need not agree with the wall clock. Ordering by what the
+    board says is running stops the allowance going on services that have not
+    left their origin."""
+    from app.ingest.service import IngestionService
+    from app.orchestrator.orchestrator import SimulationOrchestrator
+
+    orch = SimulationOrchestrator("BASE")
+    service = IngestionService(orch, RailRadarClient(mode="replay", api_key=""))
+    numbers = service.in_section()
+    if len(numbers) < 2:
+        pytest.skip("needs at least two passenger services in section")
+
+    later = numbers[-1]
+    service.observations[later] = Observation(
+        later, 120.0, "VR", "now", "board", status="running")
+    assert service.in_section()[0] == later, "the moving train is polled first"

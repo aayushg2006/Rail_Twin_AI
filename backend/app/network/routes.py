@@ -73,6 +73,15 @@ class RailRoute:
     def position_at(self, s: float) -> Position:
         return self.path.position_at(s)
 
+    def leg_at(self, s: float) -> Leg | None:
+        """The leg the train is on at distance `s`, which carries its direction."""
+        run = 0.0
+        for leg in self.path.legs:
+            if s <= run + leg.length_m:
+                return leg
+            run += leg.length_m
+        return self.path.legs[-1] if self.path.legs else None
+
     def line_at(self, s: float) -> str:
         run = 0.0
         for leg, line_id in zip(self.path.legs, self.leg_lines):

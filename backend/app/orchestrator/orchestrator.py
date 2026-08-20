@@ -60,6 +60,9 @@ class SimulationOrchestrator:
         self._cached_options: dict = {}
         self._projected = None
         self._shadow_kpis: dict = {}
+        self._comparable_ai: dict = {}
+        self._common_count = 0
+        self._lateness_budget_breaches = 0
         self._trend: list[dict] = []
         self.decision_hook: Callable[[dict], None] | None = None
         self.options_provider: Callable[..., dict] | None = None
@@ -72,6 +75,10 @@ class SimulationOrchestrator:
         self._suggestion_fingerprint: tuple = ()
         self._suggestion_generated_at = 0.0
         self._last_decision_status: dict = {"status": "READY"}
+        self._last_validation: dict | None = None
+        # Conflicts that already have a command against them. Re-issuing one
+        # stacks a second hold on a train that is already being held.
+        self._actioned: set[str] = set()
         self.decisions: list[dict] = []
         self.persistence_status = "IN_MEMORY"
         self.scenario_store = None
@@ -94,6 +101,7 @@ class SimulationOrchestrator:
         self.shadow_priority = SimulationEngine(
             scenario_id, **common, policy="PRIORITY", accept_actions=False)
         self.decisions = []
+        self._actioned = set()
         self._trend = []
         self.playing = True
         self._refresh_derived()
@@ -178,16 +186,35 @@ class SimulationOrchestrator:
             self._suggestion_fingerprint = fingerprint
             self._suggestion_revision += 1
 
-    def _shadow_kpi(self, engine: SimulationEngine) -> dict:
+    def _shadow_kpi(self, engine: SimulationEngine, common: set[str] | None) -> dict:
         astate = engine.analytic_state()
-        return dto.kpis_dict(compute_kpis(engine, astate, predict(astate, self.horizon)))
+        return dto.kpis_dict(
+            compute_kpis(engine, astate, predict(astate, self.horizon), common))
+
+    def _common_trains(self) -> set[str]:
+        """Services admitted and running in ALL THREE tracks right now.
+
+        Comparing tracks over different train sets is meaningless - that is why
+        "average lateness" could show the AI worse while it was in fact ahead.
+        """
+        sets = []
+        for engine in (self.engine, self.shadow_nothing, self.shadow_priority):
+            sets.append({tid for tid, rt in engine.trains.items()
+                         if rt.admitted and not rt.finished})
+        return set.intersection(*sets) if sets else set()
 
     def _refresh_shadows(self) -> None:
+        common = self._common_trains()
+        self._common_count = len(common)
         self._shadow_kpis = {
-            "doNothing": self._shadow_kpi(self.shadow_nothing),
-            "priorityRule": self._shadow_kpi(self.shadow_priority),
+            "doNothing": self._shadow_kpi(self.shadow_nothing, common),
+            "priorityRule": self._shadow_kpi(self.shadow_priority, common),
         }
-        live = dto.kpis_dict(self._cached_kpis) if self._cached_kpis else {}
+        astate = self.engine.analytic_state()
+        live = dto.kpis_dict(compute_kpis(
+            self.engine, astate, self._cached_prediction or predict(astate, self.horizon),
+            common))
+        self._comparable_ai = live
         self._trend.append({
             "simTimeSec": round(self.engine.now, 1),
             "serviceSeconds": round(self.engine.service_seconds, 1),
@@ -220,6 +247,8 @@ class SimulationOrchestrator:
             "decisionsRejected": len(self.decisions) - applied,
             "holdInFlightSec": round(in_flight, 1),
             "settling": in_flight > 1.0,
+            "budgetBreachesBlocked": self._lateness_budget_breaches,
+            "comparableTrains": self._common_count,
             "vsDoNothingSec": round(nothing.get("totalLatenessSec", 0.0)
                                     - live.get("totalLatenessSec", 0.0), 1),
             "vsPriorityRuleSec": round(priority.get("totalLatenessSec", 0.0)
@@ -244,7 +273,9 @@ class SimulationOrchestrator:
                           if self._projected else None),
             "prediction": dto.prediction_dict(pred),
             "kpis": kpis_map,
-            "baselines": {**self._shadow_kpis, "ai": kpis_map},
+            "baselines": {**self._shadow_kpis,
+                          "ai": self._comparable_ai or kpis_map,
+                          "comparableTrains": self._common_count},
             "delayAvoided": self._delay_avoided(),
             "trend": self._trend[-90:],
             "decisions": self.decisions[-60:],
@@ -271,6 +302,7 @@ class SimulationOrchestrator:
             "suggestionRevision": self._suggestion_revision,
             "suggestionGeneratedAt": self._suggestion_generated_at,
             "lastDecisionStatus": self._last_decision_status,
+            "proposedValidation": self._last_validation,
             "modelStatus": self.model_status,
             "scenario": self.engine.scenario_id,
             "liveData": self._live_data_status(),
@@ -358,6 +390,8 @@ class SimulationOrchestrator:
                 self._build(self.engine.scenario_id)
             elif cmd == "decide":
                 self._decide(msg)
+            elif cmd == "validate_action":
+                self._validate_proposed(msg)
             elif cmd == "observe":
                 for eng in (self.engine, self.shadow_nothing, self.shadow_priority):
                     eng.observe(str(msg.get("number", "")), float(msg.get("latenessSec", 0)))
@@ -447,7 +481,27 @@ class SimulationOrchestrator:
             self._commit(record)
             return
 
+        # Cumulative guard. Each decision can pass its own test and the SET of
+        # them still push the section past the do-nothing shadow - which is
+        # exactly what happened when three freight holds stacked up. Project
+        # this action forward and refuse it if it would breach the budget.
+        if conflict_id in self._actioned:
+            reason = "A command has already been issued for this conflict."
+            self._last_decision_status = {"status": "REJECTED", "reason": reason}
+            record.update(outcome="REJECTED", reason=reason)
+            self._commit(record)
+            return
+
+        breach = self._would_breach_budget(action)
+        if breach is not None:
+            self._last_decision_status = {"status": "REJECTED", "reason": breach}
+            self._lateness_budget_breaches += 1
+            record.update(outcome="REJECTED", reason=breach)
+            self._commit(record)
+            return
+
         lateness_before = dto.kpis_dict(self._cached_kpis).get("totalLatenessSec", 0.0)
+        self._actioned.add(conflict_id or "")
         self.engine.apply_action(action)
         self._refresh_derived()
         record["latenessBeforeSec"] = lateness_before
@@ -457,6 +511,86 @@ class SimulationOrchestrator:
         self._last_decision_status = {"status": outcome,
                                       "reason": "Applied after live safety re-validation"}
         self._commit(record)
+
+    def _validate_proposed(self, msg: dict) -> None:
+        """Check a controller's MODIFIED action without applying it.
+
+        The console asks on every adjustment, so the Apply control can be
+        disabled with a reason rather than letting a command through and
+        rejecting it afterwards. Safety is never advisory: an action the
+        interlocking would refuse cannot be issued at all.
+        """
+        action = _action(msg.get("action", {}))
+        conflict_id = msg.get("conflictId")
+        current = next((c for c in (self._cached_prediction.conflicts
+                                    if self._cached_prediction else [])
+                        if c.id == conflict_id), None)
+        if current is None:
+            self._last_validation = {
+                "conflictId": conflict_id, "passed": False,
+                "reason": "That conflict is no longer predicted.",
+                "checks": [], "clears": False,
+            }
+            return
+
+        before = self.engine.analytic_state()
+        after = apply_action(before, action)
+        projected = predict(after, self.horizon)
+        residual = any(
+            c.severity == "CRITICAL" and c.resource_id == current.resource_id
+            and {c.train_a, c.train_b} & {current.train_a, current.train_b, action.train_id}
+            for c in projected.conflicts)
+        mode = "CONTAINMENT" if msg.get("responseMode") == "CONTAINMENT" else "RESOLUTION"
+        safety = validate(action, after, current, not residual, mode)
+        budget = self._would_breach_budget(action)
+
+        failed = [c for c in safety.get("checks", []) if not c.get("passed")]
+        passed = bool(safety.get("passed")) and budget is None
+        reason = ""
+        if not safety.get("passed"):
+            # A speed or route breach is the direct cause; SEP is usually a
+            # consequence of it, so it should not be what the controller reads.
+            order = {"SPD": 0, "RTE": 1, "PLT": 2, "PROTECT": 3, "SEP": 4}
+            failed.sort(key=lambda c: order.get(c.get("id", ""), 9))
+            reason = failed[0]["detail"] if failed else "Fails interlocking validation."
+        elif budget is not None:
+            reason = budget
+        self._last_validation = {
+            "conflictId": conflict_id,
+            "action": action.as_dict(),
+            "passed": passed,
+            "clears": not residual,
+            "reason": reason,
+            "checks": safety.get("checks", []),
+        }
+
+    def _would_breach_budget(self, action: AppliedAction) -> str | None:
+        """Would applying this push AI total lateness past the do-nothing shadow?
+
+        The shadow has seen the same timetable, seed and disruptions and has
+        never taken a decision, so its total lateness is the ceiling the
+        AI-assisted twin must stay under. Returns a reason when it would.
+        """
+        shadow = self._shadow_kpis.get("doNothing")
+        if not shadow:
+            return None
+        ceiling = float(shadow.get("totalLatenessSec", 0.0))
+        before = self.engine.analytic_state()
+        after = apply_action(before, action)
+        added = 0.0
+        for tid, st in after.trains.items():
+            prior = before.trains.get(tid)
+            if prior is None or st.finished:
+                continue
+            added += max(0.0, st.hold_remaining - prior.hold_remaining)
+        projected = float(
+            (self._comparable_ai or dto.kpis_dict(self._cached_kpis)).get(
+                "totalLatenessSec", 0.0)) + added
+        if projected > ceiling + 1.0:
+            return (f"Would take the section to {projected / 60:.1f} min late, past the "
+                    f"{ceiling / 60:.1f} min it reaches with no action at all. "
+                    "The twin will not issue a command that makes the section later.")
+        return None
 
     def _commit(self, record: dict) -> None:
         self.decisions.append(record)

@@ -35,10 +35,39 @@ def test_branch_stations_are_ordered_and_monotonic():
     assert chain[0] < chain[-1] <= 40_000
 
 
-def test_platforms_are_full_length_and_there_are_seven():
+def test_the_seven_faces_have_their_real_lengths():
+    """From the OSM platform polygons, not a flat 600 m for everything."""
     assert len(platforms) == 7
+    expected = {"PF1": 350, "PF2": 368, "PF3": 368,
+                "PF4": 605, "PF5": 605, "PF6": 623, "PF7": 623}
+    for pid, length in expected.items():
+        assert platforms[pid].length_m == pytest.approx(length, abs=2), (
+            f"{pid} is {platforms[pid].length_m} m, expected about {length} m")
+
+
+def test_vasai_road_is_a_side_platform_plus_three_islands():
+    """OSM tags them `2;3`, `4;5`, `6;7` - the layout the console must draw."""
+    sides = {}
     for p in platforms.values():
-        assert p.length_m == pytest.approx(600, abs=1), f"{p.id} is {p.length_m} m"
+        sides.setdefault(p.side, []).append(p.id)
+    assert sorted(sides["ISLAND-A"]) == ["PF2", "PF3"]
+    assert sorted(sides["ISLAND-B"]) == ["PF4", "PF5"]
+    assert sorted(sides["ISLAND-C"]) == ["PF6", "PF7"]
+    assert sides["SIDE"] == ["PF1"]
+
+
+def test_the_real_track_geometry_is_carried_for_the_map():
+    from app.network.net import network_pack
+    geo = network_pack.get("geo") or {}
+    assert geo.get("available") is True, "run tools/ingest/fetch_osm.py"
+    assert "OpenStreetMap" in geo["licence"]
+    assert len(geo["ways"]) > 30
+    assert len(geo["switches"]) >= 6, "the six real turnouts"
+    assert len(geo["signals"]) >= 5
+    # Every way carries both real coordinates and local metres.
+    for way in geo["ways"][:5]:
+        assert way["points"] and way["local"]
+        assert -1.0 < way["points"][0]["lat"] - 19.38 < 1.0
 
 
 def test_station_limits_are_plausible_for_a_junction():

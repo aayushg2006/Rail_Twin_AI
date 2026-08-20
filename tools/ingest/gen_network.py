@@ -94,15 +94,23 @@ LINES = [
     ("GYL", "Goods yard reception / loop", "YARD", "BOTH", None, 25),
 ]
 
+# The real layout, from the OSM platform polygons: PF1 is a side platform and
+# the rest are three ISLANDS, tagged `2;3`, `4;5` and `6;7`. Lengths are half
+# each polygon's perimeter. The previous list invented WEST/ISLAND/EAST sides and
+# gave every face a flat 600 m.
+#   id, label, island, usage, lines served, length (m)
 PLATFORMS = [
-    ("PF1", "PF 1", "WEST", "Slow line Down - Churchgate bound", ["SLD"]),
-    ("PF2", "PF 2", "ISLAND", "Slow line Up - Virar bound", ["SLU"]),
-    ("PF3", "PF 3", "ISLAND", "Fast line Down - Churchgate bound", ["FSD"]),
-    ("PF4", "PF 4", "ISLAND", "Fast line Up - Virar / Dahanu bound", ["FSU"]),
-    ("PF5", "PF 5", "ISLAND", "Through line Down - long distance", ["THD"]),
-    ("PF6", "PF 6", "EAST", "Through Up / Diva branch - long distance", ["THU", "BRD"]),
-    ("PF7", "PF 7", "EAST", "Diva branch arrivals / long distance", ["BRU"]),
+    ("PF1", "PF 1", "SIDE", "Slow line Down - Churchgate bound", ["SLD"], 350.0),
+    ("PF2", "PF 2", "ISLAND-A", "Slow line Up - Virar bound", ["SLU"], 368.0),
+    ("PF3", "PF 3", "ISLAND-A", "Fast line Down - Churchgate bound", ["FSD"], 368.0),
+    ("PF4", "PF 4", "ISLAND-B", "Fast line Up - Virar / Dahanu bound", ["FSU"], 605.0),
+    ("PF5", "PF 5", "ISLAND-B", "Through line Down - long distance", ["THD"], 605.0),
+    ("PF6", "PF 6", "ISLAND-C", "Through Up / Diva branch - long distance", ["THU", "BRD"], 623.0),
+    ("PF7", "PF 7", "ISLAND-C", "Diva branch arrivals / long distance", ["BRU"], 623.0),
 ]
+
+# OSM platform polygon -> the two faces it carries.
+OSM_PLATFORM_REF = {"2;3": ("PF2", "PF3"), "4;5": ("PF4", "PF5"), "6;7": ("PF6", "PF7")}
 
 # --------------------------------------------------------------------- resources
 # Headway is the minimum interval between successive movements over a shared
@@ -155,6 +163,52 @@ JUNCTION_LINES = {
 }
 
 
+def _geo() -> dict:
+    """Real track geometry from OpenStreetMap, for the geographic map view.
+
+    Carried alongside the chainage model, never instead of it: chainage remains
+    the physics, and this is only what the console draws.
+    """
+    path = ROOT / "data" / "vasai-osm.json"
+    if not path.exists():
+        return {"available": False,
+                "note": "run tools/ingest/fetch_osm.py to add the real geometry"}
+    osm = json.loads(path.read_text(encoding="utf-8"))
+
+    def classify(way: dict) -> str:
+        if way.get("service") == "siding":
+            return "YARD" if way.get("usage") != "freight" else "FREIGHT_SIDING"
+        if way.get("service") == "crossover":
+            return "CROSSOVER"
+        name = (way.get("name") or "")
+        if "Virar" in name or "Borivali" in name:
+            return "WESTERN_MAIN"
+        if way.get("usage") == "main":
+            return "BRANCH_OR_LINK"
+        return "OTHER"
+
+    return {
+        "available": True,
+        "source": osm["source"],
+        "licence": osm["licence"],
+        "station": osm["station"],
+        "localFrame": osm["localFrame"],
+        "ways": [
+            {"id": w["id"], "kind": classify(w), "name": w.get("name"),
+             "lengthM": w["lengthM"], "local": w["local"], "points": w["points"]}
+            for w in osm["ways"]
+        ],
+        "platforms": [
+            {"ref": p.get("ref"), "faces": list(OSM_PLATFORM_REF.get(p.get("ref") or "", ())),
+             "local": p["local"], "points": p["points"],
+             "lengthM": round(p["lengthM"] / 2, 1)}
+            for p in osm["platforms"]
+        ],
+        "switches": [n for n in osm["nodes"] if n["kind"] == "switch"],
+        "signals": [n for n in osm["nodes"] if n["kind"] == "signal"],
+    }
+
+
 def build() -> dict:
     corridors = {}
     for cid, spec in CORRIDORS.items():
@@ -171,12 +225,12 @@ def build() -> dict:
         {
             "id": pid, "label": label, "side": side, "usage": usage,
             "serves": serves,
-            "lengthM": PLATFORM_LENGTH_M,
+            "lengthM": length,
             "centreChainageM": 0.0,
-            "startChainageM": -PLATFORM_LENGTH_M / 2,
-            "endChainageM": PLATFORM_LENGTH_M / 2,
+            "startChainageM": -length / 2,
+            "endChainageM": length / 2,
         }
-        for pid, label, side, usage, serves in PLATFORMS
+        for pid, label, side, usage, serves, length in PLATFORMS
     ]
 
     lines = [
@@ -195,12 +249,12 @@ def build() -> dict:
             "headwaySec": headway, "capacity": 1,
         })
 
-    for pid, label, side, usage, serves in PLATFORMS:
+    for pid, label, side, usage, serves, length in PLATFORMS:
         resources.append({
             "id": pid, "label": f"{label} platform road", "kind": "PLATFORM",
             "corridor": "STATION", "lines": serves,
-            "fromM": -PLATFORM_LENGTH_M / 2, "toM": PLATFORM_LENGTH_M / 2,
-            "centreM": 0.0, "lengthM": PLATFORM_LENGTH_M,
+            "fromM": -length / 2, "toM": length / 2,
+            "centreM": 0.0, "lengthM": length,
             "headwaySec": 120.0, "capacity": 1,
         })
 
@@ -237,6 +291,7 @@ def build() -> dict:
              "covers": "Kharbao, Bhiwandi Road, Kopar, Diva Jn"},
         ],
         "corridorLines": CORRIDOR_LINES,
+        "geo": _geo(),
         "corridors": corridors,
         "lines": lines,
         "platforms": platforms,
@@ -256,8 +311,10 @@ def check(net: dict) -> list[str]:
     want(abs(diva["DIVA"] - 36800) < 1, f"Diva Jn should be 36.8 km, got {diva.get('DIVA')}")
     north = {s["code"]: s["chainageM"] for s in corridors["NORTH"]["stations"]}
     want(abs(north["VR"] - 8000) < 1, f"Virar should be 8 km, got {north.get('VR')}")
-    want(all(abs(p["lengthM"] - 600) < 1 for p in net["platforms"]),
-         "platforms must be 600 m")
+    want(all(250 <= p["lengthM"] <= 700 for p in net["platforms"]),
+         "platform lengths must be the real OSM ones")
+    islands = {p["side"] for p in net["platforms"] if p["side"].startswith("ISLAND")}
+    want(len(islands) == 3, f"Vasai Road has three island platforms, found {islands}")
     want(len({p["id"] for p in net["platforms"]}) == 7, "expected 7 platform faces")
 
     ids = [r["id"] for r in net["resources"]]

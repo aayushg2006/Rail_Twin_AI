@@ -31,6 +31,7 @@ from ..network.routes import RailRoute, build_route, route_template
 from ..network.scenarios import (ScenarioSetup, TrainOverride, matches,
                                  scenario_setup)
 from .dynamics import build_profile
+from .separation import safe_gap_m, safe_speed_ms
 from .resources import ManagedResource, build_resources
 from .state import (AppliedAction, CausalLink, DelayBuckets, RESOURCE_WAIT_BUCKET,
                     TrainRuntime, TrainStatus)
@@ -42,6 +43,24 @@ KMH = 1000.0 / 3600.0
 WINDOW_BEFORE_SEC = 1800.0
 WINDOW_AFTER_SEC = 3600.0
 ADMISSION_TICK_SEC = 30.0
+# How often a running train re-reads the road in front. Signalling is
+# continuous; checking only at resource boundaries let followers close right up.
+SEPARATION_CHECK_SEC = 12.0
+
+
+def _through_position(route, s: float) -> float:
+    """Signed distance from the platform line along the direction of travel.
+
+    Negative while approaching, zero at the platform, positive beyond. This is
+    the only frame in which two trains on the same road can be compared, because
+    the road runs continuously through the station while corridor chainage
+    resets to zero there.
+    """
+    legs = route.path.legs
+    if not legs:
+        return s
+    return s - legs[0].length_m
+
 
 
 @dataclass
@@ -102,6 +121,8 @@ class SimulationEngine:
         self.events: list[DelayEvent] = []
         # Live observations (train number -> lateness seconds) fed by ingestion.
         self.observed_delay_sec: dict[str, float] = {}
+        self.observed_speed_kmh: dict[str, float] = {}
+        self.observed_platform: dict[str, str] = {}
 
         self._resolve_dynamic_overrides()
         self._resolve_block_selector()
@@ -168,10 +189,60 @@ class SimulationEngine:
     def _admit_due(self) -> None:
         window = active_window(self.service_seconds, WINDOW_BEFORE_SEC,
                                WINDOW_AFTER_SEC, self.weekday_sun0)
+        created = False
         for f in window:
             if f.id in self.trains:
                 continue
             self._create(f)
+            created = True
+        if created:
+            self._enforce_initial_separation()
+
+    def _enforce_initial_separation(self) -> None:
+        """Pull warm-started trains apart to a safe standing distance.
+
+        A service admitted mid-day is placed where free running would have
+        carried it, which takes no account of what is already on that road - two
+        goods rakes were being planted 187 m apart. Nothing in the movement loop
+        can undo that, because a train never reverses. So the placement itself
+        has to respect the gap: followers are set back behind the movement in
+        front, which is where the signalling would in fact have held them.
+        """
+        # Grouped by (running line, heading). Grouping by corridor split the road
+        # at the station datum and hid pairs straddling it; grouping by line
+        # alone put head-on movements on the bidirectional goods chord into the
+        # same queue.
+        by_road: dict[tuple[str, str], list[str]] = {}
+        for tid, rt in self.trains.items():
+            if rt.finished or not rt.admitted:
+                continue
+            if self.routes.get(tid) is None:
+                continue
+            route = self.routes[tid]
+            by_road.setdefault(
+                (route.line_at(rt.s), route.departure_corridor), []).append(tid)
+
+        for group in by_road.values():
+            if len(group) < 2:
+                continue
+            # Order along the direction of travel, leader first.
+            group.sort(key=lambda t: _through_position(self.routes[t], self.trains[t].s),
+                       reverse=True)
+            for leader_id, follower_id in zip(group, group[1:]):
+                leader, follower = self.trains[leader_id], self.trains[follower_id]
+                f = fleet_by_id[follower_id]
+                required = safe_gap_m(follower.speed_ms, f.traction, leader.service_class)
+                gap = (_through_position(self.routes[leader_id], leader.s)
+                       - _through_position(self.routes[follower_id], follower.s))
+                if gap < required:
+                    follower.s = max(0.0, follower.s - (required - gap))
+                    follower.speed_ms = 0.0
+                    follower.profile = None
+                    route = self.routes.get(follower_id)
+                    if route is not None:
+                        follower.next_use_index = next(
+                            (i for i, u in enumerate(route.uses) if u.enter_s > follower.s),
+                            len(route.uses))
 
     def _retire_stale(self) -> None:
         cutoff = self.service_seconds - WINDOW_BEFORE_SEC - 600
@@ -297,27 +368,129 @@ class SimulationEngine:
         limit = min(rt.line_speed_kmh, line.speed_limit_kmh if line else rt.line_speed_kmh)
         return max(5.0, limit) * KMH
 
+    def _train_ahead(self, rt: TrainRuntime, now: float) -> tuple[float, str] | None:
+        """(gap in metres, service class) of the nearest movement in front on the
+        same running line, or None when the road is clear.
+
+        Positions are compared in THROUGH-CHAINAGE - signed distance from the
+        platform line along the direction of travel, negative on the approach
+        and positive beyond. Comparing raw corridor chainage instead meant a
+        train on the NORTH approach could not see one just past the station on
+        the DIVA side, even though they are on the same continuous road: a goods
+        rake ran clear at 60 km/h right up to 187 m behind a stationary one.
+        """
+        route = self.routes.get(rt.train_id)
+        if route is None:
+            return None
+        my_line = route.line_at(rt.s)
+        my_heading = route.departure_corridor
+        here = _through_position(route, rt.s)
+
+        best: tuple[float, str] | None = None
+        for other_id, other in self.trains.items():
+            if other_id == rt.train_id or other.finished or not other.admitted:
+                continue
+            other_route = self.routes.get(other_id)
+            if other_route is None:
+                continue
+            other_s = other.sample_s(now)
+            # Same road AND the same way along it. The goods chord is worked in
+            # both directions, so matching on the line alone treated a head-on
+            # pair as a following pair. Opposing movements are kept apart by
+            # block occupancy instead - they can never hold the same block.
+            if (other_route.line_at(other_s) != my_line
+                    or other_route.departure_corridor != my_heading):
+                continue
+            gap = _through_position(other_route, other_s) - here
+            if gap <= 0:
+                continue                 # behind us, or alongside
+            if best is None or gap < best[0]:
+                best = (gap, other.service_class)
+        return best
+
+    def _separation_limited_ms(self, rt: TrainRuntime, proposed_ms: float,
+                               now: float) -> float:
+        """Cap a proposed speed so the safe following distance is never broken.
+
+        This is what stops two trains ever occupying the same piece of track.
+        Block occupancy alone is not enough: with 1.3 km blocks, the train
+        leaving one and the train entering the next can be almost touching.
+        """
+        ahead = self._train_ahead(rt, now)
+        if ahead is None:
+            return proposed_ms
+        gap, ahead_class = ahead
+        f = fleet_by_id[rt.train_id]
+        permitted = safe_speed_ms(gap, f.traction, ahead_class)
+        return max(0.0, min(proposed_ms, permitted))
+
     def _travel(self, rt: TrainRuntime, target_s: float, v_exit_ms: float):
+        """Run to `target_s`, re-checking the road ahead as we go.
+
+        Signalling is continuous: a driver reacts to the aspect in front at all
+        times, not only when leaving the last one. Checking separation once per
+        hop was not enough - a hop can be 1.3 km, and if the movement ahead
+        stopped part-way through it the follower ran the whole way and closed to
+        40 m. So the movement is stepped, and the road ahead is re-read on every
+        step.
+        """
         env = self.env
-        distance = target_s - rt.s
-        if distance <= EPS:
+        f = fleet_by_id[rt.train_id]
+        total = target_s - rt.s
+        if total <= EPS:
             rt.s = max(rt.s, target_s)
             return
-        f = fleet_by_id[rt.train_id]
-        limit = self._limit_ms(rt, rt.s)
-        profile = build_profile(distance, rt.speed_ms, limit, min(v_exit_ms, limit), f.traction)
-        rt.profile = profile
-        rt.profile_t0 = env.now
-        rt.profile_s0 = rt.s
-        rt.status = TrainStatus.REGULATED if rt.regulated_kmh is not None else TrainStatus.RUNNING
-        yield env.timeout(profile.duration)
-        rt.s = target_s
-        rt.speed_ms = profile.v_exit
-        rt.profile = None
+
+        nominal_limit = self._limit_ms(rt, rt.s)
+        elapsed = 0.0
+        while rt.s < target_s - EPS:
+            remaining = target_s - rt.s
+            limit = self._limit_ms(rt, rt.s)
+            checked = False
+
+            ahead = self._train_ahead(rt, env.now)
+            step = remaining
+            if ahead is not None:
+                gap, ahead_class = ahead
+                permitted = safe_speed_ms(gap, f.traction, ahead_class)
+                if permitted < limit - 0.1:
+                    checked = True
+                    limit = max(permitted, 0.5)
+                # Never move further than the room in front allows.
+                room = max(0.0, gap - safe_gap_m(0.0, f.traction, ahead_class))
+                step = min(step, room)
+                if step <= 1.0:
+                    # Standing at the signal behind the movement in front.
+                    rt.status = TrainStatus.WAITING
+                    rt.speed_ms = 0.0
+                    rt.profile = None
+                    yield env.timeout(SEPARATION_CHECK_SEC)
+                    rt.delays.add("headway_wait", SEPARATION_CHECK_SEC)
+                    elapsed += SEPARATION_CHECK_SEC
+                    continue
+
+            # Bound each step by time so the check is frequent regardless of speed.
+            step = min(step, max(60.0, limit * SEPARATION_CHECK_SEC))
+            last_step = step >= remaining - EPS
+            exit_speed = min(v_exit_ms, limit) if last_step else limit
+
+            profile = build_profile(step, rt.speed_ms, limit, exit_speed, f.traction)
+            rt.profile = profile
+            rt.profile_t0 = env.now
+            rt.profile_s0 = rt.s
+            rt.status = (TrainStatus.REGULATED
+                         if (rt.regulated_kmh is not None or checked)
+                         else TrainStatus.RUNNING)
+            yield env.timeout(profile.duration)
+            rt.s = min(target_s, rt.s + step)
+            rt.speed_ms = profile.v_exit
+            rt.profile = None
+            elapsed += profile.duration
+
         if rt.regulated_kmh is not None:
-            nominal = build_profile(distance, rt.speed_ms, self._nominal_ms(rt, rt.s),
+            nominal = build_profile(total, nominal_limit, self._nominal_ms(rt, rt.s),
                                     v_exit_ms, f.traction)
-            rt.delays.add("regulation", max(0.0, profile.duration - nominal.duration))
+            rt.delays.add("regulation", max(0.0, elapsed - nominal.duration))
 
     # ------------------------------------------------------- train process
     def _train_process(self, tid: str):
@@ -326,9 +499,15 @@ class SimulationEngine:
         route = self.routes[tid]
         f = fleet_by_id[tid]
 
-        if rt.entry_at_sec > env.now:
-            rt.status = TrainStatus.SCHEDULED
-            yield env.timeout(rt.entry_at_sec - env.now)
+        # A controller can act on a service that has not entered the section
+        # yet - a conflict is predicted before either train arrives. Interrupting
+        # this wait must not kill the process, or the train silently never runs.
+        while rt.entry_at_sec > env.now:
+            try:
+                rt.status = TrainStatus.SCHEDULED
+                yield env.timeout(rt.entry_at_sec - env.now)
+            except simpy.Interrupt:
+                continue
         rt.admitted = True
         rt.status = TrainStatus.APPROACHING
 
@@ -530,6 +709,31 @@ class SimulationEngine:
                 proc.interrupt()
             except RuntimeError:
                 pass
+
+    def observe_speed(self, number: str, kmh: float) -> None:
+        """Adopt an observed section speed as this service's line speed.
+
+        RailRadar reports `speedToNextStationKmph` per stop - what the train is
+        actually doing on the ground, rather than what the class is booked for.
+        """
+        if kmh <= 0:
+            return
+        self.observed_speed_kmh[number] = kmh
+        for tid, rt in self.trains.items():
+            f = fleet_by_id.get(tid)
+            if f and f.number == number and not rt.finished:
+                rt.line_speed_kmh = max(15.0, min(rt.line_speed_kmh * 1.5, kmh))
+
+    def observe_platform(self, number: str, platform: str) -> None:
+        """Adopt the platform the train is actually being worked into."""
+        face = platform if platform.startswith("PF") else f"PF{platform}"
+        self.observed_platform[number] = face
+        for tid, rt in self.trains.items():
+            f = fleet_by_id.get(tid)
+            if f and f.number == number and not rt.finished and not rt.departed_platform:
+                route = self.routes.get(tid)
+                if route is not None and route.platform_id != face:
+                    self._reassign(rt, platform_id=face)
 
     def observe(self, number: str, lateness_sec: float) -> None:
         """Record a live lateness observation for a train number."""

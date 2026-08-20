@@ -95,6 +95,9 @@ async def get_network() -> dict:
     return {
         "units": "metres",
         "datum": network_pack["datum"],
+        # Real OpenStreetMap track geometry for the geographic map view. The
+        # physics stays metric chainage; this is only what the console draws.
+        "geo": network_pack.get("geo", {"available": False}),
         "stationLimitM": network_pack["stationLimitM"],
         "modelledReachM": network_pack["modelledReachM"],
         "corridors": {cid: {
