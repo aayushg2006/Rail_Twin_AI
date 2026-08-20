@@ -1,291 +1,160 @@
-"""Phase 5 tests: conflict types, candidate generation, what-if isolation,
-CP-SAT optimizer, hard constraints, safety rejection, recommendation,
-human-in-the-loop accept/modify/reject + audit."""
+"""The optimiser must solve the horizon jointly and beat the do-nothing order."""
+from __future__ import annotations
+
 import pytest
 
-from app.optimize import candidates as cand_mod
-from app.optimize.engine import OptimizationEngine
-from app.optimize.whatif import evaluate, delay_profile
+from app.optimize import altgraph
+from app.optimize.engine import OptimizationEngine, _weight_of
 from app.optimize.safety import validate
-from app.orchestrator.orchestrator import SimulationOrchestrator
 from app.twin.engine import SimulationEngine
-from app.twin.predict import apply_action, predict
+from app.twin.predict import predict
+from app.twin.state import AppliedAction
 
 
-def _state_with_conflict(scenario="BASE", to=70.0):
-    eng = SimulationEngine(scenario, seed=42)
-    eng.seek(to)
-    astate = eng.analytic_state()
-    pred = predict(astate)
-    return astate, pred
+@pytest.fixture(scope="module")
+def scene():
+    eng = SimulationEngine("SIGNAL_DEGRADED", seed=42)
+    eng.advance(900)
+    state = eng.analytic_state()
+    return eng, state, predict(state)
 
 
-def test_conflict_types_detected():
-    astate, pred = _state_with_conflict("BASE", 70)
-    kinds = {c.kind for c in pred.conflicts}
-    assert "JUNCTION_CONTENTION" in kinds  # the JB demo conflict is computed
-
-    # A withdrawn platform must surface a platform/route conflict.
-    _, predp = _state_with_conflict("PLATFORM_UNAVAILABLE", 60)
-    assert any(c.resource_id == "PF6" for c in predp.conflicts)
-
-
-def test_candidates_are_bounded_and_meaningful():
-    astate, pred = _state_with_conflict()
-    conflict = next(c for c in pred.conflicts if c.resource_id == "JB")
-    cands = cand_mod.generate(astate, conflict)
-    kinds = {c.action.kind for c in cands}
-    assert "HOLD" in kinds
-    for c in cands:
-        assert c.action.train_id  # every action names an affected train
+# ------------------------------------------------------------ alternative graph
+def test_graph_has_one_alternative_pair_per_contending_couple(scene):
+    _eng, state, pred = scene
+    contended = {c.resource_id for c in pred.conflicts}
+    plans = {t: [w for w in pred.plans.get(t, []) if w.resource_id in contended]
+             for c in pred.conflicts for t in (c.train_a, c.train_b) if t}
+    plans = {k: v for k, v in plans.items() if v}
+    g = altgraph.build(plans, lambda rid: 120.0, set())
+    assert g.nodes and g.pairs
+    for a, b in g.pairs:
+        assert a[0] == b[1] and a[1] == b[0], "a pair must be the two passing orders"
+        assert a[0].train_id != a[1].train_id
 
 
-def test_whatif_never_mutates_live_state():
-    astate, pred = _state_with_conflict()
-    conflict = next(c for c in pred.conflicts if c.resource_id == "JB")
-    before = {t: st.s for t, st in astate.trains.items()}
-    before_speed = {t: st.speed_kmh for t, st in astate.trains.items()}
-    cands = cand_mod.generate(astate, conflict)
-    base_delays = delay_profile(astate)
-    for c in cands:
-        evaluate(astate, base_delays, c, conflict)
-    after = {t: st.s for t, st in astate.trains.items()}
-    after_speed = {t: st.speed_kmh for t, st in astate.trains.items()}
-    assert before == after and before_speed == after_speed
+def test_a_positive_cycle_is_reported_as_infeasible():
+    """Selecting both directions of a pair means a train precedes itself."""
+    plans = {
+        "A": [type("W", (), {"train_id": "A", "resource_id": "R", "enter": 0.0,
+                             "exit": 30.0, "s": 0.0})()],
+        "B": [type("W", (), {"train_id": "B", "resource_id": "R", "enter": 10.0,
+                             "exit": 40.0, "s": 0.0})()],
+    }
+    g = altgraph.build(plans, lambda rid: 120.0, set())
+    a, b = g.pairs[0]
+    assert altgraph.longest_paths(g, [a]) is not None
+    assert altgraph.longest_paths(g, [a, b]) is None
 
 
-def test_optimizer_selects_feasible_safe_resolving():
-    astate, pred = _state_with_conflict()
-    conflict = next(c for c in pred.conflicts if c.resource_id == "JB")
-    result = OptimizationEngine().optimize(astate, conflict)
-    assert result.selected is not None
-    assert result.selected.conflict_resolved
-    assert result.selected.safety["passed"]
-    assert result.recommendation and result.recommendation["optionId"] == result.selected.id
+def test_natural_order_is_always_feasible(scene):
+    _eng, state, pred = scene
+    contended = {c.resource_id for c in pred.conflicts}
+    plans = {t: [w for w in pred.plans.get(t, []) if w.resource_id in contended]
+             for c in pred.conflicts for t in (c.train_a, c.train_b) if t}
+    plans = {k: v for k, v in plans.items() if v}
+    g = altgraph.build(plans, lambda rid: 120.0, set())
+    assert altgraph.longest_paths(g, altgraph.natural_order(g)) is not None
 
 
-def test_hard_constraint_unsafe_never_selected():
-    astate, pred = _state_with_conflict()
-    conflict = next(c for c in pred.conflicts if c.resource_id == "JB")
-    result = OptimizationEngine().optimize(astate, conflict)
-    # Any option that fails safety or leaves the conflict unresolved must not win.
-    for ev in result.options:
-        if ev is result.selected:
-            assert ev.safety["passed"] and ev.conflict_resolved
+# -------------------------------------------------------------- joint solving
+def test_joint_plan_is_never_worse_than_doing_nothing(scene):
+    _eng, state, pred = scene
+    plan = OptimizationEngine().solve_joint(state, pred)
+    assert plan.status in ("OPTIMAL", "FEASIBLE", "HEURISTIC", "EMPTY")
+    if plan.status != "EMPTY":
+        assert plan.passenger_minutes <= plan.fcfs_passenger_minutes + 1e-6, (
+            "the optimiser must not be beaten by first-come-first-served")
 
 
-def test_safety_validator_flags_blocked_resource():
-    astate, pred = _state_with_conflict("PLATFORM_UNAVAILABLE", 60)
-    conflict = next((c for c in pred.conflicts if c.resource_id == "PF6"), pred.conflicts[0])
-    # An action leaving the withdrawn platform in play fails the PLT check.
-    from app.twin.state import AppliedAction
-    sv = validate(AppliedAction("HOLD", conflict.train_a, hold_sec=60), astate, conflict, resolved=False)
-    assert sv["passed"] is False
-    assert any(chk["id"] == "PLT" and not chk["passed"] for chk in sv["checks"])
+def test_joint_plan_reports_a_real_optimality_gap(scene):
+    _eng, state, pred = scene
+    plan = OptimizationEngine().solve_joint(state, pred)
+    if plan.solver == "CP-SAT":
+        assert plan.optimality_gap is not None and 0.0 <= plan.optimality_gap <= 1.0
 
 
-def test_human_in_loop_accept_modify_reject(monkeypatch):
-    orch = SimulationOrchestrator("BASE")
-    orch._set_clock_mode("DEMO")
-    orch.engine.seek(70)
-    orch._refresh_derived()
-    logged = []
-    orch.decision_hook = logged.append
-    conflict = next(c for c in orch._cached_prediction.conflicts if c.resource_id == "JB")
-    result = OptimizationEngine().optimize(orch.engine.analytic_state(), conflict)
-    action = result.selected.action.as_dict()
-
-    n0 = len(orch.engine.applied_actions)
-    # REJECT: no change to the twin, but logged.
-    orch._decide({"conflictId": conflict.id, "action": action, "outcome": "REJECTED"})
-    assert len(orch.engine.applied_actions) == n0
-    # ACCEPT: applies to the live twin.
-    orch._decide({"conflictId": conflict.id, "action": action, "outcome": "ACCEPTED"})
-    assert len(orch.engine.applied_actions) == n0 + 1
-    # MODIFY: a hold too short to restore separation must be rejected by the
-    # live safety re-validation and never applied.
-    mod = {"kind": "HOLD", "trainId": action["trainId"], "holdSec": 5}
-    orch._decide({"conflictId": conflict.id, "action": mod, "outcome": "MODIFIED"})
-    assert len(orch.engine.applied_actions) == n0 + 1
-    assert orch._last_decision_status["status"] == "REJECTED"
-    assert [d["outcome"] for d in logged] == ["REJECTED", "ACCEPTED", "REJECTED"]
+def test_joint_solve_is_fast_enough_for_a_live_frame(scene):
+    _eng, state, pred = scene
+    plan = OptimizationEngine().solve_joint(state, pred, time_limit_sec=1.0)
+    assert plan.solve_ms < 2500
 
 
-def test_rejected_decision_keeps_interlocking_headway_safe():
-    """Rejecting an option leaves protection to the interlocking; unresolved
-    movements may wait, but must never violate resource headway."""
-    orch = SimulationOrchestrator("BASE")
-    orch._set_clock_mode("DEMO")
-    orch.engine.seek(70)
-    orch._refresh_derived()
-    conflict = next(c for c in orch._cached_prediction.conflicts if c.resource_id == "JB")
-    before = len(orch.engine.applied_actions)
-
-    orch._decide({
-        "conflictId": conflict.id,
-        "action": {"kind": "HOLD", "trainId": conflict.train_a, "holdSec": 0},
-        "outcome": "REJECTED",
-        "note": "Rejected by controller",
-    })
-    assert len(orch.engine.applied_actions) == before
-
-    orch.engine.advance(240)
-    for resource in orch.engine.resources.values():
-        records = sorted(resource.occupancy, key=lambda item: item.enter)
-        for previous, current in zip(records, records[1:]):
-            if previous.exit is not None:
-                assert current.enter + 1e-6 >= previous.exit + resource.headway
+def test_amcc_fallback_produces_a_feasible_order(scene):
+    _eng, state, pred = scene
+    contended = {c.resource_id for c in pred.conflicts}
+    plans = {t: [w for w in pred.plans.get(t, []) if w.resource_id in contended]
+             for c in pred.conflicts for t in (c.train_a, c.train_b) if t}
+    plans = {k: v for k, v in plans.items() if v}
+    g = altgraph.build(plans, lambda rid: 120.0, set())
+    result = altgraph.solve_amcc(g, _weight_of)
+    assert result is not None
+    selected, cost = result
+    assert altgraph.longest_paths(g, selected) is not None
+    assert cost >= 0
 
 
-def test_every_scenario_has_only_safe_recommendations():
-    """Every predefined scenario must expose safe recommendations or an
-    explicit no-safe-plan response."""
-    from app.network.data import data_pack
-    from app.optimize.provider import build_options
-
-    for scenario in [item["id"] for item in data_pack["scenarios"]]:
-        orch = SimulationOrchestrator(scenario)
-        orch._set_clock_mode("DEMO")
-        orch.engine.seek(70)
-        orch._refresh_derived()
-        result = build_options(orch.engine, orch._cached_prediction)
-        for conflict in orch._cached_prediction.conflicts:
-            recommendation = result["recommendationByConflict"].get(conflict.id)
-            if not recommendation or not recommendation.get("optionId"):
-                continue
-            option = next(
-                item for item in result["optionsByConflict"][conflict.id]
-                if item["id"] == recommendation["optionId"]
-            )
-            assert option["feasible"] is True, (scenario, conflict.id)
-            assert option["safety"]["passed"] is True, (scenario, conflict.id)
-
-
-def test_options_are_generated_for_every_predicted_conflict():
-    orch = SimulationOrchestrator("BASE")
-    orch._set_clock_mode("DEMO")
-    orch.engine.seek(70)
-    orch._refresh_derived()
-    from app.optimize.provider import build_options
-    result = build_options(orch.engine, orch._cached_prediction)
-    assert set(result["optionsByConflict"]) == {c.id for c in orch._cached_prediction.conflicts}
-
-
-def test_optimizer_protects_high_value_train():
-    """The AI must give way with the lower economic-value movement: at the JB
-    demo conflict the freight yields, the express is never held."""
-    astate, pred = _state_with_conflict()
-    conflict = next(c for c in pred.conflicts if c.resource_id == "JB")
-    result = OptimizationEngine().optimize(astate, conflict)
+def test_a_crowded_local_outranks_a_lightly_loaded_express():
+    """Passenger-minutes, not a hand-assigned priority number."""
     from app.network.fleet import fleet_by_id
-    held = result.selected.action.train_id
-    other = conflict.train_b if conflict.train_a == held else conflict.train_a
-    assert fleet_by_id[held].economic_weight <= fleet_by_id[other].economic_weight
-    # F-4271 (freight, weight 2) yields to E-12928 (express, weight 5).
-    assert held == "F-4271"
+    local = next(f for f in fleet_by_id.values() if f.service_class == "LOCAL_FAST")
+    premium = next(f for f in fleet_by_id.values() if f.service_class == "PREMIUM")
+    assert _weight_of(local.id) > _weight_of(premium.id)
 
 
-def test_scenarios_produce_distinct_whatif_output():
-    """Different scenarios must yield different re-simulated options — the bug
-    where every scenario returned identical output must not regress."""
-    from app.optimize.provider import build_options
-
-    def jb_signature(scenario: str):
-        eng = SimulationEngine(scenario, seed=42)
-        eng.seek(70)
-        pred = predict(eng.analytic_state())
-        res = build_options(eng, pred)
-        jb = [c for c in pred.conflicts if c.resource_id == "JB"]
-        if not jb:
-            return ("no-jb", scenario)
-        opts = res["optionsByConflict"][jb[0].id]
-        return tuple(round(o["networkDelaySec"], 1) for o in opts)
-
-    assert jb_signature("FREIGHT_DELAY") != jb_signature("EXPRESS_DELAY")
+# -------------------------------------------------------------------- options
+def test_options_are_generated_and_ranked(scene):
+    _eng, state, pred = scene
+    if not pred.conflicts:
+        pytest.skip("no conflict in this frame")
+    opt = OptimizationEngine()
+    result = opt.optimize(state, pred.conflicts[0])
+    assert result.options
+    ranked = opt.rank_actions(result.options)
+    viable = [e for e in ranked if e.feasible and e.conflict_resolved
+              and e.safety.get("passed")]
+    assert ranked[:len(viable)] == viable, "viable options must rank first"
 
 
-def test_counterfactual_baseline_never_below_current():
-    """Accepting the AI's minimal-cost decision records delay avoided, so the
-    baseline (naive controller) is >= the current delay."""
-    orch = SimulationOrchestrator("BASE")
-    orch._set_clock_mode("DEMO")
-    orch.engine.seek(70)
-    orch._refresh_derived()
-    conflict = next(c for c in orch._cached_prediction.conflicts if c.resource_id == "JB")
-    result = OptimizationEngine().optimize(orch.engine.analytic_state(), conflict)
-    orch._decide({"conflictId": conflict.id, "action": result.selected.action.as_dict(),
-                  "outcome": "ACCEPTED"})
-    bundle = orch._build_bundle()
-    assert bundle["delayAvoidedSec"] >= 0
-    assert bundle["baselineKpis"]["totalDelaySec"] >= bundle["kpis"]["totalDelaySec"]
+def test_no_option_can_claim_a_negative_delay(scene):
+    """A re-route used to arrive EARLIER than doing nothing, because changing
+    route remapped the train onto a different-length polyline."""
+    _eng, state, pred = scene
+    opt = OptimizationEngine()
+    for conflict in pred.conflicts[:5]:
+        for ev in opt.optimize(state, conflict).options:
+            if ev.feasible:
+                assert ev.network_delay_sec > -1.0, f"{ev.title} claims {ev.network_delay_sec}s"
 
 
-def test_worst_case_returns_safe_containment_with_failure_metrics():
-    """Unavailable PF6 must produce a protective hold response, not null."""
-    from app.optimize.provider import build_options
-
-    eng = SimulationEngine("WORST_CASE", seed=42)
-    eng.seek(70)
-    pred = predict(eng.analytic_state())
-    result = build_options(eng, pred)
-    pf6 = next(c for c in pred.conflicts if c.resource_id == "PF6")
-    rec = result["recommendationByConflict"][pf6.id]
-    option = next(o for o in result["optionsByConflict"][pf6.id] if o["id"] == rec["optionId"])
-
-    assert rec["mode"] == "CONTAINMENT"
-    assert rec["status"] == "NO_SAFE_RESOLUTION"
-    assert option["responseClass"] == "CONTAINMENT"
-    assert option["safety"]["passed"] is True
-    assert option["conflictResolved"] is False
-    assert "PF6" in rec["failureMetrics"]["blockedResources"]
-    assert rec["failureMetrics"]["primaryFailureReason"] == "Resource PF6 is withdrawn or blocked"
-    assert any(check["id"] == "PLT" for check in rec["failureMetrics"]["failedSafetyChecks"])
+def test_rationale_is_plain_language(scene):
+    _eng, state, pred = scene
+    if not pred.conflicts:
+        pytest.skip("no conflict in this frame")
+    rec = OptimizationEngine().optimize(state, pred.conflicts[0]).recommendation
+    assert rec and rec["rationale"]
+    assert "economic weight" not in rec["rationale"].lower()
+    assert "CF-" not in rec["rationale"], "conflict codes do not belong in prose"
 
 
-def test_containment_can_be_accepted_after_live_revalidation():
-    from app.optimize.provider import build_options
-
-    orch = SimulationOrchestrator("WORST_CASE")
-    orch._set_clock_mode("DEMO")
-    orch.engine.seek(70)
-    orch.options_provider = build_options
-    orch._refresh_derived()
-    conflict = next(c for c in orch._cached_prediction.conflicts if c.resource_id == "PF6")
-    rec = orch._cached_options["recommendationByConflict"][conflict.id]
-    option = next(o for o in orch._cached_options["optionsByConflict"][conflict.id] if o["id"] == rec["optionId"])
-
-    orch._decide({
-        "conflictId": conflict.id,
-        "action": option["action"],
-        "outcome": "ACCEPTED",
-        "responseMode": "CONTAINMENT",
-    })
-
-    assert orch.engine.applied_actions[-1].train_id == option["action"]["trainId"]
-    assert orch._last_decision_status["status"] == "ACCEPTED"
+# --------------------------------------------------------------------- safety
+def test_safety_rejects_re_platforming_onto_a_blocked_face(scene):
+    _eng, state, pred = scene
+    if not pred.conflicts:
+        pytest.skip("no conflict in this frame")
+    conflict = pred.conflicts[0]
+    blocked = state.clone()
+    blocked.blocked_resources.add("PF3")
+    action = AppliedAction("PLATFORM_REASSIGNMENT", conflict.train_a, platform_id="PF3")
+    assert not validate(action, blocked, conflict, True)["passed"]
 
 
-def test_no_conflict_returns_monitoring_response():
-    from app.optimize.provider import build_options
-
-    eng = SimulationEngine("FREIGHT_DELAY", seed=42)
-    pred = predict(eng.analytic_state())
-    assert not pred.conflicts
-    result = build_options(eng, pred)
-
-    assert result["recommendation"]["mode"] == "MONITORING"
-    assert result["recommendation"]["status"] == "NO_CONFLICT"
-    assert result["globalPlan"]["status"] == "MONITORING"
-
-
-def test_every_predefined_scenario_has_a_response_state():
-    from app.network.data import data_pack
-    from app.optimize.provider import build_options
-
-    for scenario in [item["id"] for item in data_pack["scenarios"]]:
-        eng = SimulationEngine(scenario, seed=42)
-        eng.seek(70)
-        pred = predict(eng.analytic_state())
-        result = build_options(eng, pred)
-        assert result["recommendation"] is not None, scenario
-        assert result["recommendation"]["mode"] in {"RESOLUTION", "CONTAINMENT", "MONITORING"}
+def test_safety_rejects_a_speed_above_the_line_limit(scene):
+    _eng, state, pred = scene
+    if not pred.conflicts:
+        pytest.skip("no conflict in this frame")
+    conflict = pred.conflicts[0]
+    st = state.trains[conflict.train_a]
+    action = AppliedAction("SPEED_REGULATION", conflict.train_a,
+                           speed_kmh=st.line_speed_kmh + 40)
+    assert not validate(action, state, conflict, True)["passed"]

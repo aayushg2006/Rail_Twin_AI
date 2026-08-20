@@ -1,94 +1,113 @@
-"""Feature extraction from a twin state (Phase 4).
+"""Feature extraction from a twin state.
 
 One shared, ordered numeric feature vector per train, used by the ETA, delay and
-conflict models. Deterministic given the state so predictions are reproducible.
+conflict models. Deterministic given the state, so predictions are reproducible.
+
+All distances are metres and all speeds km/h - real physical quantities, not
+drawing units.
 """
 from __future__ import annotations
 
 from ..network.fleet import fleet_by_id
-from ..network.topology import (resource_by_id, route_by_id, route_resource_use)
-from ..twin.engine import route_length
-from ..twin.predict import (AnalyticState, Prediction, kmh_to_units_per_sec,
-                            occupancy_seconds, project_arrival, project_finish)
+from ..network.net import resources as net_resources
+from ..twin.predict import (AnalyticState, Prediction, project_finish)
 
-TYPE_CODE = {"EXPRESS": 0, "PASSENGER": 1, "LOCAL": 2, "MEMU": 3, "FREIGHT": 4, "SHUNT": 5}
+TYPE_CODE = {"EXPRESS": 0, "PASSENGER": 1, "LOCAL": 2, "MEMU": 3,
+             "FREIGHT": 4, "SHUNT": 5}
 
 FEATURE_NAMES = [
-    "current_delay_seconds",
+    "current_lateness_seconds",
     "distance_remaining_m",
     "current_speed_kmh",
-    "scheduled_remaining_seconds",
+    "line_speed_kmh",
+    "projected_remaining_seconds",
     "train_type",
     "priority_class",
+    "passenger_load",
     "dwell_remaining_seconds",
-    "number_of_stops_remaining",
+    "hold_remaining_seconds",
     "next_resource_dist_m",
+    "next_resource_headway_sec",
     "junction_congestion",
-    "downstream_train_count",
-    "average_recent_delay",
+    "same_line_ahead_count",
+    "network_mean_lateness",
     "headway_seconds",
-    "route_congestion",
+    "resources_remaining",
     "blocked_ahead",
-    "time_of_day",
+    "time_of_day_hours",
 ]
 
 
-def _next_resource_distance(state: AnalyticState, tid: str) -> tuple[float, str | None]:
+def _next_resource(state: AnalyticState, tid: str) -> tuple[float, str | None]:
     st = state.trains[tid]
-    for use in route_resource_use.get(st.route_id, []):
-        if use.s > st.s:
-            return (use.s - st.s) * 10.0, use.resource_id
+    route = state.routes.get(tid)
+    if route is None:
+        return 1e6, None
+    for use in route.uses:
+        if use.enter_s > st.s:
+            return use.enter_s - st.s, use.resource_id
     return 1e6, None
 
 
-def extract(state: AnalyticState, tid: str, pred: Prediction, epoch_hour: float = 12.0) -> dict[str, float]:
+def extract(state: AnalyticState, tid: str, pred: Prediction,
+            epoch_hour: float | None = None) -> dict[str, float]:
     st = state.trains[tid]
     f = fleet_by_id[tid]
-    length = route_length(st.route_id)
-    route = route_by_id[st.route_id]
-    sched_remaining = project_finish(state, tid) or 0.0
-    next_dist, next_res = _next_resource_distance(state, tid)
+    route = state.routes.get(tid)
+    length = route.length_m if route else 0.0
+    next_dist, next_res = _next_resource(state, tid)
+    spec = net_resources.get(next_res) if next_res else None
 
-    active = [s for s in state.trains.values() if not s.finished]
-    avg_delay = sum(s.delay_sec for s in active) / max(1, len(active))
+    active = [s for s in state.trains.values() if not s.finished and s.admitted]
+    mean_lateness = sum(s.lateness_sec for s in active) / max(1, len(active))
 
-    downstream = sum(1 for s in state.trains.values()
-                     if not s.finished and s.route_id == st.route_id and s.s > st.s)
-
-    # nearest train ahead on the same route -> headway proxy (seconds)
-    ahead = [s.s for s in state.trains.values()
-             if not s.finished and s.route_id == st.route_id and s.s > st.s]
+    # Nearest movement ahead on the same running line, as a headway proxy.
+    my_line = route.line_at(st.s) if route else None
+    ahead: list[float] = []
+    for other_id, other in state.trains.items():
+        if other_id == tid or other.finished:
+            continue
+        other_route = state.routes.get(other_id)
+        if other_route is None or my_line is None:
+            continue
+        if other_route.line_at(other.s) == my_line and other.s > st.s:
+            ahead.append(other.s - st.s)
     if ahead:
-        gap_units = min(ahead) - st.s
-        headway = gap_units / max(0.1, kmh_to_units_per_sec(max(1.0, st.speed_kmh)))
+        headway = min(ahead) / max(0.5, st.speed_ms or 1.0)
     else:
         headway = 600.0
 
     my_conflicts = [c for c in pred.conflicts if tid in (c.train_a, c.train_b)]
-    junction_congestion = sum(1 for c in my_conflicts if resource_by_id.get(c.resource_id)
-                              and resource_by_id[c.resource_id].kind == "JUNCTION")
-    route_congestion = sum(1 for u in route_resource_use.get(st.route_id, []) if u.s > st.s)
-    blocked_ahead = 1.0 if (next_res in state.blocked_resources) else 0.0
+    junction_congestion = sum(1 for c in my_conflicts if c.resource_kind == "JUNCTION")
+    remaining = sum(1 for u in (route.uses if route else ()) if u.enter_s > st.s)
+
+    if epoch_hour is None:
+        epoch_hour = ((state.service_epoch_sec + state.sim_time) / 3600.0) % 24
 
     return {
-        "current_delay_seconds": st.delay_sec,
-        "distance_remaining_m": max(0.0, (length - st.s) * 10.0),
-        "current_speed_kmh": st.speed_kmh,
-        "scheduled_remaining_seconds": sched_remaining,
-        "train_type": float(TYPE_CODE.get(f.type, 2)),
+        "current_lateness_seconds": st.lateness_sec,
+        "distance_remaining_m": max(0.0, length - st.s),
+        "current_speed_kmh": st.speed_ms * 3.6,
+        "line_speed_kmh": st.line_speed_kmh,
+        "projected_remaining_seconds": project_finish(state, tid) or 0.0,
+        "train_type": float(TYPE_CODE.get(f.category, 2)),
         "priority_class": float(f.priority),
+        "passenger_load": float(f.typical_load),
         "dwell_remaining_seconds": st.dwell_remaining,
-        "number_of_stops_remaining": float(max(0, len(route.stops) - st.next_stop_index)),
+        "hold_remaining_seconds": st.hold_remaining,
         "next_resource_dist_m": next_dist,
+        "next_resource_headway_sec": float(spec.headway_sec if spec else 0.0),
         "junction_congestion": float(junction_congestion),
-        "downstream_train_count": float(downstream),
-        "average_recent_delay": avg_delay,
+        "same_line_ahead_count": float(len(ahead)),
+        "network_mean_lateness": mean_lateness,
         "headway_seconds": min(headway, 1200.0),
-        "route_congestion": float(route_congestion),
-        "blocked_ahead": blocked_ahead,
-        "time_of_day": epoch_hour,
+        "resources_remaining": float(remaining),
+        "blocked_ahead": 1.0 if (next_res in state.blocked_resources) else 0.0,
+        "time_of_day_hours": float(epoch_hour),
     }
 
 
 def vector(feat: dict[str, float]) -> list[float]:
-    return [feat[name] for name in FEATURE_NAMES]
+    """Ordered float vector. Coerced explicitly - a stray int reaching XGBoost
+    is silent until it is not."""
+    return [float(feat[name]) for name in FEATURE_NAMES]

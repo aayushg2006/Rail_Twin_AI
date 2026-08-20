@@ -49,7 +49,10 @@ async def lifespan(app: FastAPI):
             attach_ml(orch)
             orch.model_status["ml"] = {"status": "READY", "reason": "Trained XGBoost artifacts loaded"}
         else:
-            orch.model_status["ml"] = {"status": "DETERMINISTIC_FALLBACK", "reason": "ML artifacts unavailable; deterministic projection remains authoritative"}
+            reason = get_service().stale_reason or "no trained artifacts present"
+            orch.model_status["ml"] = {
+                "status": "DETERMINISTIC_FALLBACK",
+                "reason": f"ML not in use: {reason}. The deterministic projection is authoritative."}
     except Exception as exc:
         orch.model_status["ml"] = {"status": "DETERMINISTIC_FALLBACK", "reason": str(exc)}
     await orch.start()

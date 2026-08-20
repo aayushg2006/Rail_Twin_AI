@@ -1,32 +1,80 @@
-"""OptimizationEngine — OR-Tools CP-SAT selects the resolution (Phase 5).
+"""OptimizationEngine - joint conflict resolution over the whole junction.
 
-For a predicted conflict it generates candidates, evaluates each by what-if, then
-solves a CP-SAT model that picks exactly one feasible-and-safe option minimising
-the weighted objective. Hard constraints (must resolve the conflict, must pass
-safety, must be feasible) are encoded as the model's feasible set — never traded
-away. The starred recommendation is whatever CP-SAT selects; nothing is hardcoded.
+The old engine solved one conflict at a time and used CP-SAT as an `argmin` over
+five pre-scored candidates: a model whose only constraint was `sum(x) == 1`.
+Resolving conflicts one by one cannot see that holding a train to clear the
+branch turnout pushes it into the platform road behind another service.
 
-Formulated as a one-hot selection so a richer joint multi-conflict MILP (Pyomo)
-can replace the solver later behind the same interface.
+Here the horizon is modelled as an ALTERNATIVE GRAPH (see altgraph.py) - a
+blocking job-shop over every contended resource at once - and solved as a
+disjunctive MILP with CP-SAT:
+
+    start[n]                    when train t reaches resource r
+    start[v] >= start[u] + w    blocking / running-time arcs
+    ordering booleans           for every contending pair on a shared resource,
+                                one train goes first, with full headway between
+    minimise                    sum over trains of weighted lateness
+
+CP-SAT reports a real optimality gap. If it exceeds its time budget, the AMCC
+heuristic supplies a feasible passing order instead, and the result says which
+solver produced it. Per-conflict option tables are still generated for the
+controller, but the starred recommendation now comes from the joint plan.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+import time
+from dataclasses import dataclass, field
 
 from ortools.sat.python import cp_model
 
 from ..config import ObjectiveWeights, settings
 from ..network.fleet import fleet_by_id
-from ..network.topology import resource_by_id
-from ..twin.predict import AnalyticState, Conflict
+from ..network.net import resources as net_resources
+from ..twin.predict import AnalyticState, Conflict, Prediction
+from ..twin.state import AppliedAction
+from . import altgraph
 from . import candidates as cand_mod
-from .objective import option_cost
+from .objective import explain_cost, option_cost
 from .whatif import OptionEval, delay_profile, evaluate
 
-CONSTRAINTS_CHECKED = [
-    "conflict_resolved", "safety_passed", "feasible_action",
-    "headway_minimum", "no_block_double_occupancy", "route_available",
-]
+# A hold shorter than this is inside the noise of the projection and is not
+# worth issuing as a controller instruction.
+MIN_ACTIONABLE_HOLD_SEC = 20.0
+SOLVER_TIME_LIMIT_SEC = 1.0
+
+
+@dataclass
+class JointPlan:
+    status: str                      # OPTIMAL | FEASIBLE | HEURISTIC | INFEASIBLE | EMPTY
+    solver: str                      # CP-SAT | AMCC | NONE
+    actions: list[AppliedAction] = field(default_factory=list)
+    # Both in PASSENGER-MINUTES: lateness weighted by the people on board, so
+    # the saving is denominated in the same currency the console reports.
+    passenger_minutes: float = 0.0
+    fcfs_passenger_minutes: float = 0.0
+    optimality_gap: float | None = None
+    solve_ms: float = 0.0
+    conflicts_considered: int = 0
+    resources_contended: int = 0
+
+    @property
+    def passenger_minutes_saved(self) -> float:
+        return max(0.0, self.fcfs_passenger_minutes - self.passenger_minutes)
+
+    def as_dict(self) -> dict:
+        return {
+            "status": self.status,
+            "solver": self.solver,
+            "actions": [a.as_dict() for a in self.actions],
+            "passengerMinutes": round(self.passenger_minutes, 1),
+            "fcfsPassengerMinutes": round(self.fcfs_passenger_minutes, 1),
+            "passengerMinutesSaved": round(self.passenger_minutes_saved, 1),
+            "optimalityGap": (round(self.optimality_gap, 4)
+                              if self.optimality_gap is not None else None),
+            "solveMs": round(self.solve_ms, 1),
+            "conflictsConsidered": self.conflicts_considered,
+            "resourcesContended": self.resources_contended,
+        }
 
 
 @dataclass
@@ -36,178 +84,277 @@ class OptimizationResult:
     selected: OptionEval | None
     objective_score: float
     recommendation: dict | None
-    failure_metrics: dict
+    joint_plan: JointPlan | None = None
+
+
+def _weight_of(train_id: str) -> float:
+    """What a second of lateness to this train costs the network.
+
+    Passengers per minute on board, with freight valued through its tonnage, so
+    the objective is denominated in the same passenger-minute currency the
+    console reports.
+    """
+    f = fleet_by_id.get(train_id)
+    if f is None:
+        return 1.0
+    if f.is_freight:
+        return max(0.05, f.gross_tonnes * settings.weights.freight / 60.0)
+    return max(0.1, f.typical_load / 60.0)
 
 
 class OptimizationEngine:
     def __init__(self, weights: ObjectiveWeights | None = None):
         self.weights = weights or settings.weights
 
+    # ------------------------------------------------------------ joint plan
+    def solve_joint(self, state: AnalyticState, prediction: Prediction,
+                    time_limit_sec: float = SOLVER_TIME_LIMIT_SEC) -> JointPlan:
+        contended = {c.resource_id for c in prediction.conflicts}
+        if not contended:
+            return JointPlan("EMPTY", "NONE", conflicts_considered=0)
+
+        # Only trains involved in contention need to be scheduled; everything
+        # else is running clear and would only enlarge the model.
+        involved = {t for c in prediction.conflicts for t in (c.train_a, c.train_b) if t}
+        plans = {tid: [w for w in prediction.plans.get(tid, []) if w.resource_id in contended]
+                 for tid in involved}
+        plans = {tid: p for tid, p in plans.items() if p}
+        if len(plans) < 2:
+            return JointPlan("EMPTY", "NONE", conflicts_considered=len(prediction.conflicts))
+
+        def headway_of(rid: str) -> float:
+            spec = net_resources.get(rid)
+            return (spec.headway_sec if spec else 120.0) * state.headway_multiplier
+
+        graph = altgraph.build(plans, headway_of, state.blocked_resources)
+        baseline_start = altgraph.longest_paths(graph, altgraph.natural_order(graph))
+        baseline = (altgraph.total_cost(graph, baseline_start, _weight_of)
+                    if baseline_start is not None else 0.0)
+
+        t0 = time.perf_counter()
+        plan = self._solve_cpsat(graph, time_limit_sec)
+        if plan is None:
+            heur = altgraph.solve_amcc(graph, _weight_of)
+            if heur is None:
+                return JointPlan("INFEASIBLE", "NONE", fcfs_passenger_minutes=baseline,
+                                 conflicts_considered=len(prediction.conflicts),
+                                 resources_contended=len(contended),
+                                 solve_ms=(time.perf_counter() - t0) * 1000)
+            selected, cost = heur
+            start = altgraph.longest_paths(graph, selected) or {}
+            plan = ("HEURISTIC", "AMCC", start, cost, None)
+
+        status, solver, start, cost, gap = plan
+        actions = self._actions_from_schedule(graph, start)
+        return JointPlan(
+            status=status, solver=solver, actions=actions,
+            passenger_minutes=cost, fcfs_passenger_minutes=baseline,
+            optimality_gap=gap, solve_ms=(time.perf_counter() - t0) * 1000,
+            conflicts_considered=len(prediction.conflicts),
+            resources_contended=len(contended))
+
+    def _solve_cpsat(self, graph: altgraph.AltGraph, time_limit_sec: float):
+        if not graph.nodes:
+            return None
+        occupancy = getattr(graph, "occupancy", {})
+        horizon = int(max(graph.release.values(), default=0)
+                      + sum(occupancy.values()) + 3600)
+
+        model = cp_model.CpModel()
+        start = {n: model.NewIntVar(int(graph.release.get(n, 0)), horizon, f"s{i}")
+                 for i, n in enumerate(graph.nodes)}
+
+        for u, targets in graph.fixed.items():
+            for v, w in targets:
+                if u in start and v in start:
+                    model.Add(start[v] >= start[u] + int(round(w)))
+
+        for idx, (a, b) in enumerate(graph.pairs):
+            # An arc (x, y, w) means start[y] >= start[x] + w. Exactly one arc of
+            # the pair holds, which is what makes this a passing-order decision.
+            (a_from, a_to, a_w), (b_from, b_to, b_w) = a, b
+            if any(n not in start for n in (a_from, a_to, b_from, b_to)):
+                continue
+            before = model.NewBoolVar(f"b{idx}")
+            model.Add(start[a_to] >= start[a_from] + int(round(a_w))).OnlyEnforceIf(before)
+            model.Add(start[b_to] >= start[b_from] + int(round(b_w))).OnlyEnforceIf(before.Not())
+
+        # Weighted lateness: how much later each train finishes than its
+        # conflict-free projection. Weights are scaled to integers for CP-SAT.
+        terms = []
+        by_train: dict[str, list] = {}
+        for n in graph.nodes:
+            by_train.setdefault(graph.train_of[n], []).append(n)
+        for tid, nodes in by_train.items():
+            due = int(round(graph.due.get(tid, 0.0)))
+            finish = model.NewIntVar(0, horizon, f"f_{tid}")
+            for n in nodes:
+                model.Add(finish >= start[n] + int(round(occupancy.get(n, 0.0))))
+            late = model.NewIntVar(0, horizon, f"l_{tid}")
+            model.Add(late >= finish - due)
+            terms.append(int(round(_weight_of(tid) * 100)) * late)
+        model.Minimize(sum(terms))
+
+        solver = cp_model.CpSolver()
+        solver.parameters.max_time_in_seconds = time_limit_sec
+        solver.parameters.num_search_workers = 4
+        result = solver.Solve(model)
+        if result not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
+            return None
+
+        schedule = {n: float(solver.Value(v)) for n, v in start.items()}
+        cost = solver.ObjectiveValue() / 100.0
+        bound = solver.BestObjectiveBound() / 100.0
+        gap = 0.0 if cost <= 1e-9 else max(0.0, (cost - bound) / max(1e-9, cost))
+        status = "OPTIMAL" if result == cp_model.OPTIMAL else "FEASIBLE"
+        return (status, "CP-SAT", schedule, cost, gap)
+
+    @staticmethod
+    def _actions_from_schedule(graph: altgraph.AltGraph,
+                               start: dict[altgraph.Node, float]) -> list[AppliedAction]:
+        """Translate a schedule into controller instructions.
+
+        A node scheduled later than the train would naturally arrive means that
+        train is being held back; the size of that shift is the hold to issue.
+        Only the first (largest) shift per train becomes an instruction - once it
+        has waited, the rest of its path follows.
+        """
+        shift: dict[str, float] = {}
+        for node, t in start.items():
+            delta = t - graph.release.get(node, 0.0)
+            tid = graph.train_of[node]
+            if delta > shift.get(tid, 0.0):
+                shift[tid] = delta
+        return [
+            AppliedAction("HOLD", tid, hold_sec=round(delta))
+            for tid, delta in sorted(shift.items(), key=lambda kv: -kv[1])
+            if delta >= MIN_ACTIONABLE_HOLD_SEC
+        ]
+
+    # ---------------------------------------------------- per-conflict options
     def generate_candidates(self, state: AnalyticState, conflict: Conflict):
         return cand_mod.generate(state, conflict)
 
-    def evaluate_candidate(self, state, base_delays, cand, conflict, horizon,
-                           response_class: str = "RESOLUTION"):
-        return evaluate(state, base_delays, cand, conflict, horizon, response_class)
-
     def optimize(self, state: AnalyticState, conflict: Conflict,
-                 horizon: float = settings.default_horizon_sec) -> OptimizationResult:
+                 horizon: float = settings.default_horizon_sec,
+                 joint: JointPlan | None = None) -> OptimizationResult:
         base_delays = delay_profile(state)
         cands = self.generate_candidates(state, conflict)
-        evals = [self.evaluate_candidate(state, base_delays, c, conflict, horizon) for c in cands]
+        evals = [evaluate(state, base_delays, c, conflict, horizon) for c in cands]
 
-        # Feasible set = hard constraints satisfied (resolved + safe + feasible action).
-        feasible_idx = [i for i, ev in enumerate(evals)
-                        if ev.feasible and ev.conflict_resolved and ev.safety.get("passed")]
+        viable = [e for e in evals
+                  if e.feasible and e.conflict_resolved and e.safety.get("passed")]
+        selected = min(viable, key=lambda e: option_cost(e, self.weights)) if viable else None
 
-        selected: OptionEval | None = None
-        score = 0.0
-        if feasible_idx:
-            model = cp_model.CpModel()
-            x = {i: model.NewBoolVar(f"x{i}") for i in feasible_idx}
-            model.Add(sum(x.values()) == 1)               # choose exactly one
-            costs = {i: int(round(option_cost(evals[i], self.weights))) for i in feasible_idx}
-            model.Minimize(sum(costs[i] * x[i] for i in feasible_idx))
-            solver = cp_model.CpSolver()
-            # One conflict must never monopolize the live event loop. The
-            # candidate evaluations are deterministic; CP-SAT only chooses
-            # among them and is bounded tightly for real-time refreshes.
-            solver.parameters.max_time_in_seconds = 0.05
-            status = solver.Solve(model)
-            if status in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-                chosen = next(i for i in feasible_idx if solver.Value(x[i]) == 1)
-                selected = evals[chosen]
-                score = float(costs[chosen])
+        # Prefer whatever the joint plan does to this conflict's trains: it is
+        # the only choice that accounts for what happens further along.
+        if joint and joint.actions:
+            involved = {conflict.train_a, conflict.train_b}
+            joint_trains = {a.train_id for a in joint.actions if a.train_id in involved}
+            aligned = [e for e in viable if e.action.train_id in joint_trains]
+            if aligned:
+                selected = min(aligned, key=lambda e: option_cost(e, self.weights))
 
-        failure_metrics = self._failure_metrics(state, conflict, evals)
-        if selected is not None:
-            recommendation = self._recommendation(conflict, evals, selected, failure_metrics)
-        else:
-            containment_evals = [
-                self.evaluate_candidate(state, base_delays, cand, conflict, horizon, "CONTAINMENT")
-                for cand in cands
-                if cand.action.kind in ("HOLD", "SPEED_REGULATION")
+        score = option_cost(selected, self.weights) if selected else 0.0
+
+        if selected is None:
+            containment = [
+                evaluate(state, base_delays, c, conflict, horizon, "CONTAINMENT")
+                for c in cands if c.action.kind in ("HOLD", "SPEED_REGULATION")
             ]
-            for containment in containment_evals:
-                containment.id = f"CONTAIN-{containment.id}"
-            safe_containment = [e for e in containment_evals if e.feasible and e.safety.get("passed")]
-            evals.extend(safe_containment)
-            if safe_containment:
-                selected = min(
-                    safe_containment,
-                    key=lambda e: (e.residual_conflicts, max(0.0, e.weighted_delay_sec),
-                                   e.action.hold_sec or 0.0, e.title),
-                )
-                recommendation = self._containment_recommendation(conflict, selected, failure_metrics)
+            for c in containment:
+                c.id = f"CONTAIN-{c.id}"
+            safe = [e for e in containment if e.feasible and e.safety.get("passed")]
+            evals.extend(safe)
+            if safe:
+                selected = min(safe, key=lambda e: (e.residual_conflicts,
+                                                    max(0.0, e.passenger_minutes),
+                                                    e.action.hold_sec or 0.0))
+                recommendation = self._containment(conflict, selected)
             else:
                 recommendation = {
                     "mode": "CONTAINMENT", "status": "NO_SAFE_RESOLUTION",
                     "conflictId": conflict.id, "optionId": None,
-                    "rationale": "No safe containment command could be generated; interlocking and the section controller must protect the movement.",
+                    "rationale": ("No safe command clears this without creating a worse "
+                                  "conflict. The interlocking and the section controller "
+                                  "must protect the movement."),
                     "expectedOutcome": "No automatic movement command is available.",
-                    "alternatives": [], "failureMetrics": failure_metrics,
+                    "alternatives": [],
                 }
+        else:
+            recommendation = self._recommendation(conflict, evals, selected, joint)
 
         return OptimizationResult(
             conflict_id=conflict.id, options=evals, selected=selected,
-            objective_score=score, recommendation=recommendation,
-            failure_metrics=failure_metrics)
+            objective_score=score, recommendation=recommendation, joint_plan=joint)
 
     def rank_actions(self, evals: list[OptionEval]) -> list[OptionEval]:
-        return sorted(evals, key=lambda e: (not (e.feasible and e.conflict_resolved
-                                                 and e.safety.get("passed")),
-                                            option_cost(e, self.weights)))
+        return sorted(evals, key=lambda e: (
+            not (e.feasible and e.conflict_resolved and e.safety.get("passed")),
+            option_cost(e, self.weights)))
 
+    # --------------------------------------------------------------- rationale
     def _recommendation(self, conflict: Conflict, evals: list[OptionEval],
-                        selected: OptionEval | None, failure_metrics: dict) -> dict | None:
-        if selected is None:
-            return None
-        res = resource_by_id[conflict.resource_id]
-        required = round(res.headway_sec * 1.0)
-        keep_id = conflict.train_b if conflict.train_a == selected.action.train_id else conflict.train_a
-        keep = fleet_by_id.get(keep_id)
+                        selected: OptionEval, joint: JointPlan | None) -> dict:
         give = fleet_by_id.get(selected.action.train_id)
-        if keep and give:
-            keep_cls = (keep.service_class or keep.type).lower().replace("_", " ")
-            give_cls = (give.service_class or give.type).lower().replace("_", " ")
-            obj = round(option_cost(selected, self.weights))
-            if keep.economic_weight >= give.economic_weight:
-                rationale = (f"{keep.id} ({keep_cls}, economic weight {keep.economic_weight:g}) is the "
-                             f"higher-value movement over {conflict.resource_label}, so {give.id} "
-                             f"({give_cls}, economic weight {give.economic_weight:g}) gives way at the "
-                             f"lowest network cost (objective {obj}).")
-            else:
-                # Give-way is forced here (e.g. a following move on the same line);
-                # holding {give} still clears the conflict at least network cost.
-                rationale = (f"Holding {give.id} ({give_cls}, economic weight {give.economic_weight:g}) "
-                             f"clears {conflict.resource_label} at the lowest network cost (objective "
-                             f"{obj}); {keep.id} ({keep_cls}, economic weight {keep.economic_weight:g}) "
-                             f"keeps its path.")
+        keep_id = (conflict.train_b if conflict.train_a == selected.action.train_id
+                   else conflict.train_a)
+        keep = fleet_by_id.get(keep_id)
+        where = _place(conflict)
+
+        if give and keep:
+            give_load = give.typical_load or int(give.gross_tonnes)
+            unit = "passengers" if give.typical_load else "tonnes"
+            keep_unit = "passengers" if keep.typical_load else "tonnes"
+            keep_load = keep.typical_load or int(keep.gross_tonnes)
+            rationale = (
+                f"{keep.number} carries {keep_load:,} {keep_unit} and "
+                f"{give.number} {give_load:,} {unit}, so holding {give.number} "
+                f"at {where} costs the fewest passenger-minutes."
+            )
         else:
-            rationale = f"Applies the lowest-cost feasible regulation for {conflict.resource_label}."
+            rationale = f"Lowest-cost regulation available at {where}."
+
+        if joint and joint.solver == "CP-SAT" and joint.status == "OPTIMAL":
+            rationale += " This is part of a plan proven optimal across every conflict in the horizon."
+        elif joint and joint.solver == "AMCC":
+            rationale += " Chosen by the fast heuristic; the exact solver hit its time budget."
+
         others = [e for e in evals
-                  if e.id != selected.id and e.feasible and e.conflict_resolved and e.safety.get("passed")]
+                  if e.id != selected.id and e.feasible and e.conflict_resolved
+                  and e.safety.get("passed")]
         return {
             "mode": "RESOLUTION", "status": "READY",
-            "conflictId": conflict.id, "optionId": selected.id, "rationale": rationale,
-            "expectedOutcome": (f"{conflict.kind.replace('_', ' ').lower()} cleared; separation "
-                                f"restored to at least {required} s over {conflict.resource_id}."),
-            "alternatives": [f"{o.title} — network {o.network_delay_sec / 60:.1f} min" for o in others],
-            "failureMetrics": failure_metrics,
+            "conflictId": conflict.id, "optionId": selected.id,
+            "rationale": rationale,
+            "expectedOutcome": (
+                f"{where} clears with at least "
+                f"{round(conflict.required_separation_sec)} s between the two movements."),
+            "alternatives": [
+                {"title": o.title,
+                 "passengerMinutes": round(max(0.0, o.passenger_minutes), 1),
+                 "networkDelaySec": round(o.network_delay_sec, 1)}
+                for o in others
+            ],
+            "costBreakdown": explain_cost(selected, self.weights),
         }
 
-    def _containment_recommendation(self, conflict: Conflict, selected: OptionEval,
-                                    failure_metrics: dict) -> dict:
+    @staticmethod
+    def _containment(conflict: Conflict, selected: OptionEval) -> dict:
+        where = _place(conflict)
         return {
             "mode": "CONTAINMENT", "status": "NO_SAFE_RESOLUTION",
             "conflictId": conflict.id, "optionId": selected.id,
-            "rationale": (f"Full resolution is unavailable at {conflict.resource_label}. "
-                          f"Recommended safe containment: {selected.title}. "
-                          "The movement remains protected, but residual network work requires controller/interlocking intervention."),
-            "expectedOutcome": "Movement protected without claiming the unavailable resource is restored.",
-            "alternatives": [], "failureMetrics": failure_metrics,
+            "rationale": (f"{where} cannot be cleared. The safest available command is "
+                          f"{selected.title.lower()}, which protects the movement without "
+                          "pretending the conflict is resolved."),
+            "expectedOutcome": "Movement protected; residual work needs the section controller.",
+            "alternatives": [],
+            "costBreakdown": explain_cost(selected),
         }
 
-    def _failure_metrics(self, state: AnalyticState, conflict: Conflict,
-                         evals: list[OptionEval]) -> dict:
-        failed_checks: dict[str, dict] = {}
-        infeasible_reasons = []
-        for ev in evals:
-            if ev.infeasible_reason:
-                infeasible_reasons.append({"candidate": ev.title, "reason": ev.infeasible_reason})
-            for check in ev.safety.get("checks", []):
-                if not check.get("passed"):
-                    failed_checks[check["id"]] = {
-                        "id": check["id"], "label": check["label"], "detail": check["detail"],
-                    }
-        deficit = max(0.0, conflict.required_separation_sec - conflict.separation_sec)
-        primary = "No safe candidate clears the conflict"
-        if conflict.resource_id in state.blocked_resources:
-            primary = f"Resource {conflict.resource_id} is withdrawn or blocked"
-        elif deficit > 0:
-            primary = f"Separation shortfall of {round(deficit)} seconds"
-        elif any("speed" in (v["label"] + v["detail"]).lower() for v in failed_checks.values()):
-            primary = "Required regulation is outside the permissible speed band"
-        elif state.unavailable_routes:
-            primary = "Required alternate route is unavailable"
-        return {
-            "candidateCount": len(evals),
-            "feasibleCandidateCount": sum(1 for e in evals if e.feasible),
-            "safetyPassingCandidateCount": sum(1 for e in evals if e.safety.get("passed")),
-            "conflictClearingCandidateCount": sum(1 for e in evals if e.conflict_resolved),
-            "actualSeparationSec": round(conflict.separation_sec, 1),
-            "requiredSeparationSec": round(conflict.required_separation_sec, 1),
-            "separationDeficitSec": round(deficit, 1),
-            "residualCriticalConflicts": max((e.residual_conflicts for e in evals), default=0),
-            "residualWarningConflicts": 0,
-            "failedSafetyChecks": list(failed_checks.values()),
-            "infeasibleReasons": infeasible_reasons,
-            "blockedResources": sorted(state.blocked_resources),
-            "unavailableRoutes": sorted(state.unavailable_routes),
-            "headwayMultiplier": round(state.headway_multiplier, 2),
-            "networkDelaySec": round(min((e.network_delay_sec for e in evals), default=0.0), 1),
-            "passengerDelaySec": round(min((e.passenger_delay_sec for e in evals), default=0.0), 1),
-            "freightDelaySec": round(min((e.freight_delay_sec for e in evals), default=0.0), 1),
-            "weightedDelaySec": round(min((e.weighted_delay_sec for e in evals), default=0.0), 1),
-            "primaryFailureReason": primary,
-        }
+
+def _place(conflict: Conflict) -> str:
+    """Where the problem is, in words a controller would use."""
+    spec = net_resources.get(conflict.resource_id)
+    return spec.label if spec else conflict.resource_id

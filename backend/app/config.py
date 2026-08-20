@@ -14,26 +14,28 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class ObjectiveWeights(BaseSettings):
-    """Configurable weights for the optimization objective (Phase 5).
+    """Weights for the optimisation objective (see optimize/objective.py).
 
-    J = W_delay*total_delay + W_conflict*conflicts + W_headway*headway_violations
-      + W_platform*platform_conflicts + W_route*route_changes + W_hold*hold_seconds
+    J = W_conflict * residual_conflicts + W_passenger * passenger_minutes
+      + W_freight * freight_tonne_minutes + W_hold * hold_sec
+      + W_route * route_changes - W_throughput * cleared
     """
 
     model_config = SettingsConfigDict(env_prefix="RAILTWIN_W_")
 
-    delay: float = 1.0          # per second of (economic-weighted) network delay
-    conflict: float = 6000.0    # per residual CRITICAL conflict (dominates)
-    headway: float = 2500.0     # per headway violation
-    platform: float = 3000.0    # per platform conflict
-    route: float = 400.0        # per route change (infrastructure churn)
-    hold: float = 0.5           # per second of imposed hold
-    # Reward for clearing trains within the horizon, per unit of economic weight
-    # cleared. Kept well below the delay scale so throughput never overrides
-    # protecting a high-value movement (the previous 1e6 hard weight did).
-    throughput: float = 200.0
-    # Recommendation scoring: passenger delay weighted vs freight (matches TS engine).
-    passenger_vs_freight: float = 3.0
+    # A residual CRITICAL conflict is a hard failure and dominates everything.
+    conflict: float = 1.0
+    # Per passenger-minute of added delay - the primary term.
+    passenger: float = 1.0
+    # Per freight tonne-minute. Calibrated so ~110 tonne-minutes of goods delay
+    # trades against 1 passenger-minute, which puts a 4,700 t loaded rake at
+    # roughly the same worth per minute as a 43-passenger shortfall.
+    freight: float = 0.009
+    # Small penalties that break ties towards the least intrusive regulation.
+    hold: float = 0.02
+    route: float = 25.0
+    # Reward for clearing a movement inside the horizon.
+    throughput: float = 40.0
 
 
 class Settings(BaseSettings):
@@ -49,7 +51,9 @@ class Settings(BaseSettings):
     # populated out of the box. LIVE runs on the real wall clock but remaps the
     # schedule into the window (see SimulationEngine) so it is never empty either.
     clock_mode: str = "DEMO"
-    demo_epoch_start_ms: int = 1_786_792_440_000  # 2026-08-15T16:44:00+05:30
+    # 2026-08-15T14:10:00+05:30 - the busiest window the timetable covers:
+    # ~51 movements in an hour, 16 express, 28 suburban, 7 goods, 19 over the branch.
+    demo_epoch_start_ms: int = 1_786_783_200_000
     tick_seconds: float = 0.25               # broadcast cadence (sim advances speed*tick)
     default_horizon_sec: int = 900           # 15 min prediction horizon
     respawn_gap_sec: int = 150

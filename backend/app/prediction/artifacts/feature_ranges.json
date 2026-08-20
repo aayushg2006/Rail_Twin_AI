@@ -1,66 +1,78 @@
 {
-  "current_delay_seconds": [
-    0.0,
-    1200.0
+  "current_lateness_seconds": [
+    -266.22673964034766,
+    1907.3623737126982
   ],
   "distance_remaining_m": [
     0.0,
-    15529.166666666668
+    16000.0
   ],
   "current_speed_kmh": [
-    15.0,
-    95.0
-  ],
-  "scheduled_remaining_seconds": [
     0.0,
-    1745.973735621702
+    110.00000000000001
+  ],
+  "line_speed_kmh": [
+    15.0,
+    110.0
+  ],
+  "projected_remaining_seconds": [
+    0.0,
+    1916.3464829792135
   ],
   "train_type": [
     0.0,
     5.0
   ],
   "priority_class": [
-    1.0,
+    0.0,
     6.0
+  ],
+  "passenger_load": [
+    0.0,
+    2600.0
   ],
   "dwell_remaining_seconds": [
     0.0,
-    89.9407671175008
+    169.4554963729081
   ],
-  "number_of_stops_remaining": [
-    0.0,
-    1.0
-  ],
-  "next_resource_dist_m": [
-    0.40273876461469627,
-    1000000.0
-  ],
-  "junction_congestion": [
-    0.0,
-    1.0
-  ],
-  "downstream_train_count": [
+  "hold_remaining_seconds": [
     0.0,
     0.0
   ],
-  "average_recent_delay": [
-    128.57142857142858,
-    333.6186375054065
+  "next_resource_dist_m": [
+    0.037588171631796286,
+    1000000.0
   ],
-  "headway_seconds": [
-    600.0,
-    600.0
+  "next_resource_headway_sec": [
+    0.0,
+    300.0
   ],
-  "route_congestion": [
+  "junction_congestion": [
     0.0,
     4.0
+  ],
+  "same_line_ahead_count": [
+    0.0,
+    8.0
+  ],
+  "network_mean_lateness": [
+    -94.73378058786693,
+    714.309112350007
+  ],
+  "headway_seconds": [
+    0.00820219452634774,
+    1200.0
+  ],
+  "resources_remaining": [
+    0.0,
+    13.0
   ],
   "blocked_ahead": [
     0.0,
     1.0
   ],
-  "time_of_day": [
-    11.237499999988358,
-    11.487317914376035
+  "time_of_day_hours": [
+    1.0055555555555555,
+    23.5
   ]
 }

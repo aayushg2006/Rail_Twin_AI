@@ -5,9 +5,8 @@ from fastapi import APIRouter, Request
 
 from ..domain import dto
 from ..network.scenarios import scenarios
-from ..network.data import data_pack
-from ..network.topology import (junctions, platforms, resources, routes,
-                                signals, station_ticks, tracks)
+from ..network.net import (corridor_lines, corridors, lines, network_pack,
+                           platforms, resources, timetable_pack, freight_pack)
 
 router = APIRouter(prefix="/api")
 
@@ -27,8 +26,14 @@ async def list_scenarios() -> list[dict]:
 
 @router.get("/data-pack")
 async def get_data_pack() -> dict:
-    """Expose schedule provenance and normalized services for the console."""
-    return data_pack
+    """Provenance for everything the console displays."""
+    return {
+        "network": {k: v for k, v in network_pack.items() if k != "resources"},
+        "timetable": {k: v for k, v in timetable_pack.items() if k != "services"},
+        "freight": {k: v for k, v in freight_pack.items() if k != "paths"},
+        "serviceCount": len(timetable_pack["services"]),
+        "freightPathCount": len(freight_pack["paths"]),
+    }
 
 
 @router.get("/state")
@@ -51,27 +56,29 @@ async def get_audit(request: Request) -> list[dict]:
 
 @router.get("/network")
 async def get_network() -> dict:
-    """Full topology export (map-unit coordinates) for optional client use."""
-    def pts(path):
-        return [p.as_dict() for p in path]
+    """The physical network in metres. The console maps chainage to pixels."""
     return {
-        "tracks": [{"id": t.id, "name": t.name, "kind": t.kind, "direction": t.direction,
-                    "through": t.through, "path": pts(t.path)} for t in tracks],
-        "platforms": [{"id": p.id, "label": p.label, "x": p.x, "y": p.y, "w": p.w,
-                       "h": p.h, "serves": p.serves, "usage": p.usage, "side": p.side}
-                      for p in platforms],
-        "junctions": [{"id": j.id, "label": j.label, "at": j.at.as_dict()} for j in junctions],
-        "resources": [{"id": r.id, "label": r.label, "kind": r.kind, "at": r.at.as_dict(),
-                       "radius": r.radius, "headwaySec": r.headway_sec, "capacity": r.capacity}
-                      for r in resources],
-        "signals": [{"id": s.id, "at": s.at.as_dict(), "facing": s.facing, "aspect": s.aspect}
-                    for s in signals],
-        "stationTicks": [{"name": s.name, "at": s.at.as_dict(), "km": s.km,
-                          "corridor": s.corridor} for s in station_ticks],
-        "routes": [{"id": r.id, "label": r.label, "tracks": r.tracks,
-                    "corridorFrom": r.corridor_from, "corridorTo": r.corridor_to,
-                    "path": pts(r.path),
-                    "stops": [{"s": st.s, "platformId": st.platform_id,
-                               "dwellSec": st.dwell_sec} for st in r.stops]}
-                   for r in routes],
+        "units": "metres",
+        "datum": network_pack["datum"],
+        "stationLimitM": network_pack["stationLimitM"],
+        "modelledReachM": network_pack["modelledReachM"],
+        "corridors": {cid: {
+            "id": c.id, "label": c.label, "shortLabel": c.short_label,
+            "screenDir": c.screen_dir, "reachM": c.reach_m,
+            "lineSpeedKmh": c.line_speed_kmh,
+            "stations": [{"code": code, "name": name, "chainageM": m}
+                         for code, name, m in c.stations],
+        } for cid, c in corridors.items()},
+        "corridorLines": corridor_lines,
+        "lines": [{"id": l.id, "label": l.label, "kind": l.kind,
+                   "direction": l.direction, "platformId": l.platform_id,
+                   "speedLimitKmh": l.speed_limit_kmh} for l in lines.values()],
+        "platforms": [{"id": p.id, "label": p.label, "side": p.side,
+                       "usage": p.usage, "serves": list(p.serves),
+                       "lengthM": p.length_m} for p in platforms.values()],
+        "resources": [{"id": r.id, "label": r.label, "kind": r.kind,
+                       "corridor": r.corridor, "lines": sorted(r.lines),
+                       "fromM": r.from_m, "toM": r.to_m, "centreM": r.centre_m,
+                       "lengthM": r.length_m, "headwaySec": r.headway_sec,
+                       "capacity": r.capacity} for r in resources.values()],
     }

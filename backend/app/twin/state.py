@@ -1,39 +1,42 @@
-"""Digital-twin state model (Phase 3).
+"""Digital-twin state model.
 
 Rich internal representation: per-cause delay buckets, occupancy history and
-causal chains that power explainability. The api/dto layer maps this down to the
-exact frontend shapes in src/domain/types.ts.
+causal chains that power explainability.
+
+Position is CHAINAGE IN METRES along the train's route, and speed is sampled
+from the live motion profile rather than being a stored constant, so both are
+real physical quantities. Delay is lateness against the booked time from the
+published timetable - not accumulated waiting, which is what the old model
+reported and which no controller would recognise.
 """
 from __future__ import annotations
 
 import enum
 from dataclasses import dataclass, field, replace
 
+from .dynamics import Profile
+
 
 class TrainStatus(str, enum.Enum):
-    SCHEDULED = "SCHEDULED"
-    DEPARTED = "DEPARTED"
+    SCHEDULED = "SCHEDULED"        # booked, not yet in the modelled area
+    APPROACHING = "APPROACHING"
     RUNNING = "RUNNING"
-    WAITING = "WAITING"
-    HELD = "HELD"
+    REGULATED = "REGULATED"        # running under an imposed speed restriction
+    WAITING = "WAITING"            # held at a signal for a resource
+    HELD = "HELD"                  # held by a controller decision
     ARRIVING = "ARRIVING"
     DWELLING = "DWELLING"
-    DEPARTED_STATION = "DEPARTED_STATION"
-    DELAYED = "DELAYED"
+    DEPARTED = "DEPARTED"
     COMPLETED = "COMPLETED"
     CANCELLED = "CANCELLED"
 
 
 @dataclass
 class DelayBuckets:
-    """Per-cause delay accumulation (seconds). Individual causes are never
-    overwritten — total_delay is always their sum. Required for explainability.
-
-    The seven causes named in the Phase-3 brief (base_schedule, dwell, block_wait,
-    junction_wait, platform_wait, headway_wait, event) plus two controller-action
-    causes (hold, regulation) so a controller decision's cost is attributable too.
-    """
-    base_schedule: float = 0.0
+    """Per-cause delay accumulation (seconds), never overwritten, so the total is
+    always attributable. `entry` is lateness the service already carried when it
+    reached the modelled area - from a live observation, never a constant."""
+    entry: float = 0.0
     dwell: float = 0.0
     block_wait: float = 0.0
     junction_wait: float = 0.0
@@ -45,7 +48,7 @@ class DelayBuckets:
 
     @property
     def total(self) -> float:
-        return (self.base_schedule + self.dwell + self.block_wait + self.junction_wait
+        return (self.entry + self.dwell + self.block_wait + self.junction_wait
                 + self.platform_wait + self.headway_wait + self.event
                 + self.hold + self.regulation)
 
@@ -54,72 +57,98 @@ class DelayBuckets:
 
     def as_dict(self) -> dict[str, float]:
         return {
-            "base_schedule": self.base_schedule, "dwell": self.dwell,
-            "block_wait": self.block_wait, "junction_wait": self.junction_wait,
-            "platform_wait": self.platform_wait, "headway_wait": self.headway_wait,
-            "event": self.event, "hold": self.hold, "regulation": self.regulation,
-            "total": self.total,
+            "entry": round(self.entry, 1), "dwell": round(self.dwell, 1),
+            "block_wait": round(self.block_wait, 1),
+            "junction_wait": round(self.junction_wait, 1),
+            "platform_wait": round(self.platform_wait, 1),
+            "headway_wait": round(self.headway_wait, 1),
+            "event": round(self.event, 1), "hold": round(self.hold, 1),
+            "regulation": round(self.regulation, 1), "total": round(self.total, 1),
         }
 
     def copy(self) -> "DelayBuckets":
         return replace(self)
 
 
-# Which delay bucket a wait over a resource kind lands in.
-RESOURCE_WAIT_BUCKET = {"JUNCTION": "junction_wait", "BLOCK": "block_wait", "PLATFORM": "platform_wait"}
+RESOURCE_WAIT_BUCKET = {
+    "JUNCTION": "junction_wait", "BLOCK": "block_wait", "PLATFORM": "platform_wait",
+}
 
 
 @dataclass
 class TrainRuntime:
-    """Live state of one train inside the twin."""
+    """Live state of one train inside the twin. `s` is metres along its route."""
     train_id: str
-    route_id: str                      # effective route (may differ from fleet default after reroute)
-    s: float                           # distance along route path, map units
-    speed_kmh: float
-    nominal_speed_kmh: float
+    route_id: str
+    s: float
+    speed_ms: float
+    line_speed_kmh: float
+    service_class: str
     priority: int
-    ttype: str
-    scheduled_departure_sec: int = 0
-    activation_at_sec: float = 0.0
+    category: str
+    booked_dep_sec: int
+    entry_at_sec: float
     source: str = ""
     provenance: str = ""
-    status: TrainStatus = TrainStatus.RUNNING
+    status: TrainStatus = TrainStatus.SCHEDULED
+    next_use_index: int = 0
     next_stop_index: int = 0
     finished: bool = False
+    admitted: bool = False
     delays: DelayBuckets = field(default_factory=DelayBuckets)
 
-    # motion sampling — interpolate position at arbitrary env.now
-    move_s0: float = 0.0
-    move_s1: float = 0.0
-    move_t0: float = 0.0
-    move_t1: float = 0.0
-    moving: bool = False
+    # Live motion: sample position and speed from the profile in flight.
+    profile: Profile | None = None
+    profile_t0: float = 0.0
+    profile_s0: float = 0.0
 
-    # time-boxed phases (for remaining-seconds in the DTO)
+    # Time-boxed phases, for remaining-seconds in the DTO.
     dwell_end_t: float = 0.0
     hold_end_t: float = 0.0
-    wait_end_t: float | None = None    # None => indefinite (blocked)
+    wait_end_t: float | None = None     # None => indefinite (resource withdrawn)
 
-    # controller-imposed hold queued but not yet consumed
+    # Controller-imposed regulation and holds.
+    regulated_kmh: float | None = None
     pending_hold_sec: float = 0.0
-    # portion of the pending hold that is an external event delay (attributed to `event`)
     pending_event_hold: float = 0.0
 
+    # Booked-time accounting.
+    actual_dep_sec: float | None = None
+    departed_platform: bool = False
+
+    def sample(self, now: float) -> tuple[float, float]:
+        """(metres along route, speed in m/s) at simulation time `now`."""
+        if self.profile is None:
+            return self.s, 0.0 if self.status != TrainStatus.RUNNING else self.speed_ms
+        covered, speed = self.profile.sample(now - self.profile_t0)
+        return self.profile_s0 + covered, speed
+
     def sample_s(self, now: float) -> float:
-        if self.moving and self.move_t1 > self.move_t0:
-            if now <= self.move_t0:
-                return self.move_s0
-            if now >= self.move_t1:
-                return self.move_s1
-            t = (now - self.move_t0) / (self.move_t1 - self.move_t0)
-            return self.move_s0 + (self.move_s1 - self.move_s0) * t
-        return self.s
+        return self.sample(now)[0]
+
+    def speed_kmh_at(self, now: float) -> float:
+        return self.sample(now)[1] * 3.6
 
     def dwell_remaining(self, now: float) -> float:
         return max(0.0, self.dwell_end_t - now) if self.status == TrainStatus.DWELLING else 0.0
 
     def hold_remaining(self, now: float) -> float:
         return max(0.0, self.hold_end_t - now) if self.status == TrainStatus.HELD else 0.0
+
+    def lateness_sec(self, now: float, epoch_service_sec: float) -> float:
+        """Lateness against the booked departure from Vasai Road.
+
+        Once the train has actually left the platform this is fixed at the
+        difference that was measured. Before that it is the delay accrued so far,
+        plus any overrun already visible against the booked time.
+        """
+        if self.actual_dep_sec is not None:
+            return self.actual_dep_sec - self.booked_dep_sec
+        accrued = self.delays.total
+        service_now = epoch_service_sec + now
+        if service_now > self.booked_dep_sec and not self.finished:
+            return max(accrued, service_now - self.booked_dep_sec)
+        return accrued
 
 
 @dataclass
@@ -132,9 +161,9 @@ class OccupancyRecord:
 
 @dataclass
 class CausalLink:
-    """One edge in the delay-dependency graph — required for explainable delay."""
-    cause_type: str        # e.g. JUNCTION_OCCUPANCY, HEADWAY, BLOCK_OCCUPANCY, EVENT
-    cause_entity: str      # train id or resource id that caused it
+    """One edge in the delay-dependency graph - required for explainable delay."""
+    cause_type: str
+    cause_entity: str
     affected_train: str
     resource: str
     added_delay_seconds: float

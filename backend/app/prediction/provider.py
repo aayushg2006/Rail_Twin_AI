@@ -23,9 +23,11 @@ def build_ml(engine, prediction: Prediction) -> dict:
     for tid, st in astate.trains.items():
         if st.finished:
             continue
+        if not st.admitted:
+            continue
         sched = project_finish(astate, tid) or 0.0
         ml_by_train[tid] = [
-            svc.predict_delay(astate, tid, prediction, st.delay_sec),
+            svc.predict_delay(astate, tid, prediction, st.lateness_sec),
             svc.predict_eta(astate, tid, prediction, sched),
         ]
 
@@ -34,7 +36,7 @@ def build_ml(engine, prediction: Prediction) -> dict:
         # Predict for the give-way (lower-priority) movement — the one that would
         # actually wait — so the probability is meaningful.
         pair = [t for t in (c.train_a, c.train_b) if t and t in astate.trains]
-        tid = max(pair, key=lambda t: fleet_by_id[t].priority) if pair else None
+        tid = max(pair, key=lambda t: fleet_by_id[t].priority) if pair else None  # the give-way movement
         if not tid:
             continue
         pc = svc.predict_conflict(astate, tid, prediction)

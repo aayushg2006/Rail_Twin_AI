@@ -1,11 +1,27 @@
-"""Synthetic training-data generation from the digital twin (Phase 4).
+"""Training-data generation from the digital twin.
 
-Runs many deterministic episodes (varying scenario, seed, injected events) and
-samples per-train states. Targets are TRUE outcomes read from the same episode as
-it plays out — remaining travel time to the next finish, delay H seconds later,
-and whether the train accrues fresh resource-wait delay within H (a materialised
-conflict). This is emphatically NOT the hard-coded demo result: it is data the
-twin produces, used to teach models that then run on unseen states.
+The previous version labelled every row with the output of the deterministic
+`predict()` function and then trained a model to reproduce it. That is circular:
+the model was learning a closed-form formula the process already had, which is
+why it scored an ETA MAE of 1.95 seconds and a conflict AUC of 0.997 while
+adding no information whatsoever.
+
+Two things fix it.
+
+1. The twin is now STOCHASTIC - dwell overruns, entry lateness drawn from the
+   observed distribution, and genuine queueing at contended resources - so the
+   deterministic projection CANNOT be exact and there is real residual variance
+   to learn.
+2. Targets are what ACTUALLY HAPPENED in the episode, read out of the DES after
+   the fact:
+     target_eta        real remaining time to clear the section
+     target_lateness   real lateness H seconds later
+     target_conflict   whether the train really did lose time waiting for a
+                       resource within H - a materialised conflict, not a
+                       prediction copied from predict()
+
+The deterministic projection becomes the BASELINE each model is scored against,
+which is the only way "why AI?" has an answer.
 """
 from __future__ import annotations
 
@@ -14,14 +30,17 @@ from collections import defaultdict
 
 import pandas as pd
 
-from ..config import settings
-from ..network.fleet import fleet
 from ..network.scenarios import SCENARIO_IDS
-from ..twin.engine import DelayEvent, SimulationEngine
-from ..twin.predict import predict
+from ..twin.engine import SimulationEngine
+from ..twin.predict import predict, project_finish
 from .features import FEATURE_NAMES, extract
 
-FUTURE_HORIZON = 300.0   # seconds ahead for delay / conflict targets
+FUTURE_HORIZON = 300.0     # seconds ahead for the lateness / conflict targets
+SAMPLE_EVERY = 20.0        # seconds of simulation between samples
+
+# Start hours spread across the working day so the model sees the night freight
+# peak, the morning suburban peak and the middle-of-day long-distance mix.
+START_HOURS = (1, 6, 8, 10, 12, 14, 16, 18, 21, 23)
 
 
 def _wait_delay(rt) -> float:
@@ -29,69 +48,75 @@ def _wait_delay(rt) -> float:
     return d.block_wait + d.junction_wait + d.platform_wait + d.headway_wait
 
 
-def generate_dataset(n_episodes: int = 40, t_max: float = 900.0, dt: float = 15.0,
-                     seed0: int = 1000) -> pd.DataFrame:
+def _epoch_for(hour: int) -> int:
+    """Milliseconds for 2026-08-15 at `hour` IST - the twin's reference day."""
+    base = 1_786_783_200_000            # 14:10 IST
+    return int(base + (hour - 14) * 3600_000 - 600_000)
+
+
+def generate_dataset(n_episodes: int = 40, t_max: float = 1800.0,
+                     dt: float = SAMPLE_EVERY, seed0: int = 1000) -> pd.DataFrame:
     rows: list[dict] = []
     for ep in range(n_episodes):
         seed = seed0 + ep
         scenario = SCENARIO_IDS[ep % len(SCENARIO_IDS)]
-        rng = random.Random(seed)
-        eng = SimulationEngine(scenario, seed=seed)
-        if rng.random() < 0.4:
-            eng.seek(rng.uniform(10, 40))
-            target = rng.choice([f.id for f in fleet])
-            eng.inject_event(DelayEvent("EPV", "TRAIN", target,
-                                        delay_seconds=rng.choice([120, 240, 360, 480]),
-                                        reason="synthetic"))
+        hour = START_HOURS[ep % len(START_HOURS)]
+        eng = SimulationEngine(scenario, seed=seed, epoch_start_ms=_epoch_for(hour),
+                               stochastic=True)
 
         series: dict[str, list[dict]] = defaultdict(list)
-        finishes: dict[str, list[float]] = defaultdict(list)
-        prev_finished = {tid: False for tid in eng.trains}
+        cleared_at: dict[str, float] = {}
 
         while eng.now < t_max:
             eng.advance(dt)
             astate = eng.analytic_state()
             pred = predict(astate)
-            hour = ((settings.epoch_start_ms / 1000 + eng.now) / 3600) % 24
+            # analytic_state() drops finished trains, so watch the runtimes
+            # directly or the moment a train clears is never observed.
+            for tid, rt in eng.trains.items():
+                if rt.finished and rt.admitted:
+                    cleared_at.setdefault(tid, eng.now)
             for tid, st in astate.trains.items():
-                rt = eng.trains[tid]
-                if not prev_finished[tid] and rt.finished:
-                    finishes[tid].append(eng.now)
-                prev_finished[tid] = rt.finished
-                if st.finished:
+                rt = eng.trains.get(tid)
+                if rt is None or not rt.admitted or rt.finished:
                     continue
-                in_critical = any(c.severity == "CRITICAL" and tid in (c.train_a, c.train_b)
-                                  for c in pred.conflicts)
                 series[tid].append({
-                    "t": eng.now, "feats": extract(astate, tid, pred, hour),
-                    "delay": st.delay_sec, "wait": _wait_delay(rt),
-                    "crit": 1 if in_critical else 0,
+                    "t": eng.now,
+                    "feats": extract(astate, tid, pred),
+                    "lateness": rt.lateness_sec(eng.now, eng.service_epoch_sec),
+                    "wait": _wait_delay(rt),
+                    # The deterministic answer, kept as the baseline to beat.
+                    "projected_remaining": project_finish(astate, tid) or 0.0,
                 })
 
         for tid, seq in series.items():
-            fin = finishes[tid]
-            for rec in seq:
+            finish = cleared_at.get(tid)
+            for i, rec in enumerate(seq):
                 t0 = rec["t"]
-                next_finish = next((ft for ft in fin if ft > t0), None)
-                future = [r for r in seq if r["t"] >= t0 + FUTURE_HORIZON]
-                ref = future[0] if future else (seq[-1] if seq else rec)
                 window = [r for r in seq if t0 < r["t"] <= t0 + FUTURE_HORIZON]
-                # Conflict target: does this train become involved in a CRITICAL
-                # predicted conflict within the horizon (materialised or forecast)?
-                conflict_label = 1 if any(r["crit"] for r in window) else 0
+                later = [r for r in seq if r["t"] >= t0 + FUTURE_HORIZON]
+                reference = later[0] if later else (seq[-1] if seq else rec)
+
+                # A conflict MATERIALISED if the train actually accrued fresh
+                # resource-wait time inside the horizon.
+                fresh_wait = max((r["wait"] for r in window), default=rec["wait"]) - rec["wait"]
+
                 row = dict(rec["feats"])
                 row["episode"] = f"ep{ep}"
+                row["scenario"] = scenario
                 row["train"] = tid
-                row["target_eta"] = (next_finish - t0) if next_finish is not None else None
-                row["target_delay"] = ref["delay"]
-                row["target_conflict"] = conflict_label
+                row["baseline_remaining"] = rec["projected_remaining"]
+                row["target_eta"] = (finish - t0) if (finish is not None and finish > t0) else None
+                row["target_lateness"] = reference["lateness"]
+                row["target_conflict"] = 1 if fresh_wait > 5.0 else 0
                 rows.append(row)
 
     return pd.DataFrame(rows)
 
 
-def split_by_episode(df: pd.DataFrame, seed: int = 42) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    """Split by simulation episode (never leak rows of one episode across splits)."""
+def split_by_episode(df: pd.DataFrame, seed: int = 42
+                     ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """Split by episode so no episode leaks across train/val/test."""
     episodes = sorted(df["episode"].unique())
     rng = random.Random(seed)
     rng.shuffle(episodes)

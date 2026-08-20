@@ -1,0 +1,1597 @@
+{
+ "id": "BSR-NET-2026-08",
+ "label": "Vasai Road Jn physical network",
+ "generatedAt": "2026-08-20T15:52:15+00:00",
+ "units": "metres",
+ "datum": "Chainage 0 is the centre of the Vasai Road platform line. Every corridor measures OUTWARD from the station as a positive number, so distance along a route is the sum of absolute chainage changes. `screenDir` is a rendering hint only and never enters the physics.",
+ "stationLimitM": 1200.0,
+ "modelledReachM": 8000.0,
+ "sources": [
+  {
+   "label": "India Rail Info - BSR nearby-station distances",
+   "file": "Vasai Local Train data.pdf",
+   "covers": "Nalla Sopara, Virar, Naigaon, Bhayandar, Juchandra, Kaman Road, Vaitarna, Borivali"
+  },
+  {
+   "label": "Vasai Road - Diva branch timetable distances",
+   "covers": "Kharbao, Bhiwandi Road, Kopar, Diva Jn"
+  }
+ ],
+ "corridorLines": {
+  "NORTH": [
+   "SLD",
+   "SLU",
+   "FSD",
+   "FSU",
+   "THD",
+   "THU",
+   "GDC"
+  ],
+  "SOUTH": [
+   "SLD",
+   "SLU",
+   "FSD",
+   "FSU",
+   "THD",
+   "THU"
+  ],
+  "DIVA": [
+   "BRD",
+   "BRU",
+   "GDC"
+  ],
+  "YARD": [
+   "GYL"
+  ]
+ },
+ "corridors": {
+  "NORTH": {
+   "label": "Western main - Nalla Sopara / Virar / Dahanu Road",
+   "shortLabel": "TOWARD VIRAR / DAHANU ROAD",
+   "screenDir": "RIGHT",
+   "reachM": 8000.0,
+   "lineSpeedKmh": 110,
+   "id": "NORTH",
+   "stations": [
+    {
+     "code": "NSP",
+     "name": "Nalla Sopara",
+     "chainageM": 4000.0
+    },
+    {
+     "code": "VR",
+     "name": "Virar",
+     "chainageM": 8000.0
+    },
+    {
+     "code": "VTN",
+     "name": "Vaitarna",
+     "chainageM": 17000.0
+    },
+    {
+     "code": "DRD",
+     "name": "Dahanu Road",
+     "chainageM": 72000.0
+    }
+   ]
+  },
+  "SOUTH": {
+   "label": "Western main - Naigaon / Bhayandar / Mumbai",
+   "shortLabel": "TOWARD BHAYANDAR / CHURCHGATE",
+   "screenDir": "LEFT",
+   "reachM": 8000.0,
+   "lineSpeedKmh": 110,
+   "id": "SOUTH",
+   "stations": [
+    {
+     "code": "NIG",
+     "name": "Naigaon",
+     "chainageM": 4000.0
+    },
+    {
+     "code": "BYR",
+     "name": "Bhayandar",
+     "chainageM": 9000.0
+    },
+    {
+     "code": "MIRA",
+     "name": "Mira Road",
+     "chainageM": 12000.0
+    },
+    {
+     "code": "BVI",
+     "name": "Borivali",
+     "chainageM": 18000.0
+    }
+   ]
+  },
+  "DIVA": {
+   "label": "Vasai Road - Diva branch (Bhiwandi / Panvel / Kalyan)",
+   "shortLabel": "TOWARD DIVA JN - BHIWANDI / PANVEL / KALYAN",
+   "screenDir": "DOWN_LEFT",
+   "reachM": 8000.0,
+   "lineSpeedKmh": 100,
+   "id": "DIVA",
+   "stations": [
+    {
+     "code": "JCNR",
+     "name": "Juchandra",
+     "chainageM": 5000.0
+    },
+    {
+     "code": "KARD",
+     "name": "Kaman Road",
+     "chainageM": 11000.0
+    },
+    {
+     "code": "KHBV",
+     "name": "Kharbao",
+     "chainageM": 17200.0
+    },
+    {
+     "code": "BIRD",
+     "name": "Bhiwandi Road",
+     "chainageM": 23500.0
+    },
+    {
+     "code": "KOPR",
+     "name": "Kopar",
+     "chainageM": 31000.0
+    },
+    {
+     "code": "DIVA",
+     "name": "Diva Jn",
+     "chainageM": 36800.0
+    }
+   ]
+  },
+  "YARD": {
+   "label": "Vasai Road goods yard and reception lines",
+   "shortLabel": "GOODS YARD",
+   "screenDir": "UP",
+   "reachM": 2400.0,
+   "lineSpeedKmh": 25,
+   "id": "YARD",
+   "stations": []
+  }
+ },
+ "lines": [
+  {
+   "id": "SLD",
+   "label": "Slow line (Down - Mumbai bound)",
+   "kind": "SUBURBAN_SLOW",
+   "direction": "DOWN",
+   "platformId": "PF1",
+   "speedLimitKmh": 80
+  },
+  {
+   "id": "SLU",
+   "label": "Slow line (Up - Virar bound)",
+   "kind": "SUBURBAN_SLOW",
+   "direction": "UP",
+   "platformId": "PF2",
+   "speedLimitKmh": 80
+  },
+  {
+   "id": "FSD",
+   "label": "Fast line (Down - Mumbai bound)",
+   "kind": "SUBURBAN_FAST",
+   "direction": "DOWN",
+   "platformId": "PF3",
+   "speedLimitKmh": 100
+  },
+  {
+   "id": "FSU",
+   "label": "Fast line (Up - Virar bound)",
+   "kind": "SUBURBAN_FAST",
+   "direction": "UP",
+   "platformId": "PF4",
+   "speedLimitKmh": 100
+  },
+  {
+   "id": "THD",
+   "label": "Through line (Down - Mumbai bound)",
+   "kind": "MAIN_THROUGH",
+   "direction": "DOWN",
+   "platformId": "PF5",
+   "speedLimitKmh": 110
+  },
+  {
+   "id": "THU",
+   "label": "Through line (Up - north bound)",
+   "kind": "MAIN_THROUGH",
+   "direction": "UP",
+   "platformId": "PF6",
+   "speedLimitKmh": 110
+  },
+  {
+   "id": "BRD",
+   "label": "Diva branch (Diva bound)",
+   "kind": "BRANCH",
+   "direction": "BRANCH_OUT",
+   "platformId": "PF6",
+   "speedLimitKmh": 100
+  },
+  {
+   "id": "BRU",
+   "label": "Diva branch (Vasai bound)",
+   "kind": "BRANCH",
+   "direction": "BRANCH_IN",
+   "platformId": "PF7",
+   "speedLimitKmh": 100
+  },
+  {
+   "id": "GDC",
+   "label": "Goods avoiding chord",
+   "kind": "FREIGHT",
+   "direction": "BOTH",
+   "platformId": null,
+   "speedLimitKmh": 60
+  },
+  {
+   "id": "GYL",
+   "label": "Goods yard reception / loop",
+   "kind": "YARD",
+   "direction": "BOTH",
+   "platformId": null,
+   "speedLimitKmh": 25
+  }
+ ],
+ "platforms": [
+  {
+   "id": "PF1",
+   "label": "PF 1",
+   "side": "WEST",
+   "usage": "Slow line Down - Churchgate bound",
+   "serves": [
+    "SLD"
+   ],
+   "lengthM": 600.0,
+   "centreChainageM": 0.0,
+   "startChainageM": -300.0,
+   "endChainageM": 300.0
+  },
+  {
+   "id": "PF2",
+   "label": "PF 2",
+   "side": "ISLAND",
+   "usage": "Slow line Up - Virar bound",
+   "serves": [
+    "SLU"
+   ],
+   "lengthM": 600.0,
+   "centreChainageM": 0.0,
+   "startChainageM": -300.0,
+   "endChainageM": 300.0
+  },
+  {
+   "id": "PF3",
+   "label": "PF 3",
+   "side": "ISLAND",
+   "usage": "Fast line Down - Churchgate bound",
+   "serves": [
+    "FSD"
+   ],
+   "lengthM": 600.0,
+   "centreChainageM": 0.0,
+   "startChainageM": -300.0,
+   "endChainageM": 300.0
+  },
+  {
+   "id": "PF4",
+   "label": "PF 4",
+   "side": "ISLAND",
+   "usage": "Fast line Up - Virar / Dahanu bound",
+   "serves": [
+    "FSU"
+   ],
+   "lengthM": 600.0,
+   "centreChainageM": 0.0,
+   "startChainageM": -300.0,
+   "endChainageM": 300.0
+  },
+  {
+   "id": "PF5",
+   "label": "PF 5",
+   "side": "ISLAND",
+   "usage": "Through line Down - long distance",
+   "serves": [
+    "THD"
+   ],
+   "lengthM": 600.0,
+   "centreChainageM": 0.0,
+   "startChainageM": -300.0,
+   "endChainageM": 300.0
+  },
+  {
+   "id": "PF6",
+   "label": "PF 6",
+   "side": "EAST",
+   "usage": "Through Up / Diva branch - long distance",
+   "serves": [
+    "THU",
+    "BRD"
+   ],
+   "lengthM": 600.0,
+   "centreChainageM": 0.0,
+   "startChainageM": -300.0,
+   "endChainageM": 300.0
+  },
+  {
+   "id": "PF7",
+   "label": "PF 7",
+   "side": "EAST",
+   "usage": "Diva branch arrivals / long distance",
+   "serves": [
+    "BRU"
+   ],
+   "lengthM": 600.0,
+   "centreChainageM": 0.0,
+   "startChainageM": -300.0,
+   "endChainageM": 300.0
+  }
+ ],
+ "resources": [
+  {
+   "id": "J-N",
+   "label": "North end crossover",
+   "kind": "JUNCTION",
+   "corridor": "NORTH",
+   "lines": [
+    "SLD",
+    "SLU",
+    "FSD",
+    "FSU",
+    "THD",
+    "THU"
+   ],
+   "fromM": 990.0,
+   "toM": 1310.0,
+   "centreM": 1150.0,
+   "lengthM": 320.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "J-S",
+   "label": "South end crossover",
+   "kind": "JUNCTION",
+   "corridor": "SOUTH",
+   "lines": [
+    "SLD",
+    "SLU",
+    "FSD",
+    "FSU",
+    "THD",
+    "THU"
+   ],
+   "fromM": 990.0,
+   "toM": 1310.0,
+   "centreM": 1150.0,
+   "lengthM": 320.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "J-B",
+   "label": "Diva branch turnout",
+   "kind": "JUNCTION",
+   "corridor": "DIVA",
+   "lines": [
+    "BRD",
+    "BRU",
+    "GDC"
+   ],
+   "fromM": 700.0,
+   "toM": 1100.0,
+   "centreM": 900.0,
+   "lengthM": 400.0,
+   "headwaySec": 180.0,
+   "capacity": 1
+  },
+  {
+   "id": "J-G",
+   "label": "Goods chord turnout",
+   "kind": "JUNCTION",
+   "corridor": "NORTH",
+   "lines": [
+    "GDC",
+    "THU",
+    "THD"
+   ],
+   "fromM": 1950.0,
+   "toM": 2250.0,
+   "centreM": 2100.0,
+   "lengthM": 300.0,
+   "headwaySec": 150.0,
+   "capacity": 1
+  },
+  {
+   "id": "J-Y",
+   "label": "Goods yard neck",
+   "kind": "JUNCTION",
+   "corridor": "YARD",
+   "lines": [
+    "GYL",
+    "GDC"
+   ],
+   "fromM": 275.0,
+   "toM": 525.0,
+   "centreM": 400.0,
+   "lengthM": 250.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "PF1",
+   "label": "PF 1 platform road",
+   "kind": "PLATFORM",
+   "corridor": "STATION",
+   "lines": [
+    "SLD"
+   ],
+   "fromM": -300.0,
+   "toM": 300.0,
+   "centreM": 0.0,
+   "lengthM": 600.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "PF2",
+   "label": "PF 2 platform road",
+   "kind": "PLATFORM",
+   "corridor": "STATION",
+   "lines": [
+    "SLU"
+   ],
+   "fromM": -300.0,
+   "toM": 300.0,
+   "centreM": 0.0,
+   "lengthM": 600.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "PF3",
+   "label": "PF 3 platform road",
+   "kind": "PLATFORM",
+   "corridor": "STATION",
+   "lines": [
+    "FSD"
+   ],
+   "fromM": -300.0,
+   "toM": 300.0,
+   "centreM": 0.0,
+   "lengthM": 600.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "PF4",
+   "label": "PF 4 platform road",
+   "kind": "PLATFORM",
+   "corridor": "STATION",
+   "lines": [
+    "FSU"
+   ],
+   "fromM": -300.0,
+   "toM": 300.0,
+   "centreM": 0.0,
+   "lengthM": 600.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "PF5",
+   "label": "PF 5 platform road",
+   "kind": "PLATFORM",
+   "corridor": "STATION",
+   "lines": [
+    "THD"
+   ],
+   "fromM": -300.0,
+   "toM": 300.0,
+   "centreM": 0.0,
+   "lengthM": 600.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "PF6",
+   "label": "PF 6 platform road",
+   "kind": "PLATFORM",
+   "corridor": "STATION",
+   "lines": [
+    "THU",
+    "BRD"
+   ],
+   "fromM": -300.0,
+   "toM": 300.0,
+   "centreM": 0.0,
+   "lengthM": 600.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "PF7",
+   "label": "PF 7 platform road",
+   "kind": "PLATFORM",
+   "corridor": "STATION",
+   "lines": [
+    "BRU"
+   ],
+   "fromM": -300.0,
+   "toM": 300.0,
+   "centreM": 0.0,
+   "lengthM": 600.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-SLD-1",
+   "label": "SLD block 1 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "SLD"
+   ],
+   "fromM": 1500.0,
+   "toM": 2800.0,
+   "centreM": 2150.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-SLD-2",
+   "label": "SLD block 2 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "SLD"
+   ],
+   "fromM": 2800.0,
+   "toM": 4100.0,
+   "centreM": 3450.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-SLD-3",
+   "label": "SLD block 3 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "SLD"
+   ],
+   "fromM": 4100.0,
+   "toM": 5400.0,
+   "centreM": 4750.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-SLD-4",
+   "label": "SLD block 4 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "SLD"
+   ],
+   "fromM": 5400.0,
+   "toM": 6700.0,
+   "centreM": 6050.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-SLD-5",
+   "label": "SLD block 5 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "SLD"
+   ],
+   "fromM": 6700.0,
+   "toM": 8000.0,
+   "centreM": 7350.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-SLU-1",
+   "label": "SLU block 1 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "SLU"
+   ],
+   "fromM": 1500.0,
+   "toM": 2800.0,
+   "centreM": 2150.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-SLU-2",
+   "label": "SLU block 2 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "SLU"
+   ],
+   "fromM": 2800.0,
+   "toM": 4100.0,
+   "centreM": 3450.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-SLU-3",
+   "label": "SLU block 3 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "SLU"
+   ],
+   "fromM": 4100.0,
+   "toM": 5400.0,
+   "centreM": 4750.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-SLU-4",
+   "label": "SLU block 4 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "SLU"
+   ],
+   "fromM": 5400.0,
+   "toM": 6700.0,
+   "centreM": 6050.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-SLU-5",
+   "label": "SLU block 5 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "SLU"
+   ],
+   "fromM": 6700.0,
+   "toM": 8000.0,
+   "centreM": 7350.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-FSD-1",
+   "label": "FSD block 1 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "FSD"
+   ],
+   "fromM": 1500.0,
+   "toM": 2800.0,
+   "centreM": 2150.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-FSD-2",
+   "label": "FSD block 2 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "FSD"
+   ],
+   "fromM": 2800.0,
+   "toM": 4100.0,
+   "centreM": 3450.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-FSD-3",
+   "label": "FSD block 3 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "FSD"
+   ],
+   "fromM": 4100.0,
+   "toM": 5400.0,
+   "centreM": 4750.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-FSD-4",
+   "label": "FSD block 4 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "FSD"
+   ],
+   "fromM": 5400.0,
+   "toM": 6700.0,
+   "centreM": 6050.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-FSD-5",
+   "label": "FSD block 5 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "FSD"
+   ],
+   "fromM": 6700.0,
+   "toM": 8000.0,
+   "centreM": 7350.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-FSU-1",
+   "label": "FSU block 1 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "FSU"
+   ],
+   "fromM": 1500.0,
+   "toM": 2800.0,
+   "centreM": 2150.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-FSU-2",
+   "label": "FSU block 2 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "FSU"
+   ],
+   "fromM": 2800.0,
+   "toM": 4100.0,
+   "centreM": 3450.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-FSU-3",
+   "label": "FSU block 3 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "FSU"
+   ],
+   "fromM": 4100.0,
+   "toM": 5400.0,
+   "centreM": 4750.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-FSU-4",
+   "label": "FSU block 4 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "FSU"
+   ],
+   "fromM": 5400.0,
+   "toM": 6700.0,
+   "centreM": 6050.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-FSU-5",
+   "label": "FSU block 5 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "FSU"
+   ],
+   "fromM": 6700.0,
+   "toM": 8000.0,
+   "centreM": 7350.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-THD-1",
+   "label": "THD block 1 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "THD"
+   ],
+   "fromM": 1500.0,
+   "toM": 2800.0,
+   "centreM": 2150.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-THD-2",
+   "label": "THD block 2 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "THD"
+   ],
+   "fromM": 2800.0,
+   "toM": 4100.0,
+   "centreM": 3450.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-THD-3",
+   "label": "THD block 3 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "THD"
+   ],
+   "fromM": 4100.0,
+   "toM": 5400.0,
+   "centreM": 4750.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-THD-4",
+   "label": "THD block 4 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "THD"
+   ],
+   "fromM": 5400.0,
+   "toM": 6700.0,
+   "centreM": 6050.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-THD-5",
+   "label": "THD block 5 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "THD"
+   ],
+   "fromM": 6700.0,
+   "toM": 8000.0,
+   "centreM": 7350.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-THU-1",
+   "label": "THU block 1 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "THU"
+   ],
+   "fromM": 1500.0,
+   "toM": 2800.0,
+   "centreM": 2150.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-THU-2",
+   "label": "THU block 2 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "THU"
+   ],
+   "fromM": 2800.0,
+   "toM": 4100.0,
+   "centreM": 3450.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-THU-3",
+   "label": "THU block 3 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "THU"
+   ],
+   "fromM": 4100.0,
+   "toM": 5400.0,
+   "centreM": 4750.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-THU-4",
+   "label": "THU block 4 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "THU"
+   ],
+   "fromM": 5400.0,
+   "toM": 6700.0,
+   "centreM": 6050.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-THU-5",
+   "label": "THU block 5 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "THU"
+   ],
+   "fromM": 6700.0,
+   "toM": 8000.0,
+   "centreM": 7350.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-GDC-1",
+   "label": "GDC block 1 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "GDC"
+   ],
+   "fromM": 1500.0,
+   "toM": 2800.0,
+   "centreM": 2150.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-GDC-2",
+   "label": "GDC block 2 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "GDC"
+   ],
+   "fromM": 2800.0,
+   "toM": 4100.0,
+   "centreM": 3450.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-GDC-3",
+   "label": "GDC block 3 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "GDC"
+   ],
+   "fromM": 4100.0,
+   "toM": 5400.0,
+   "centreM": 4750.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-GDC-4",
+   "label": "GDC block 4 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "GDC"
+   ],
+   "fromM": 5400.0,
+   "toM": 6700.0,
+   "centreM": 6050.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-N-GDC-5",
+   "label": "GDC block 5 (North)",
+   "kind": "BLOCK",
+   "corridor": "NORTH",
+   "lines": [
+    "GDC"
+   ],
+   "fromM": 6700.0,
+   "toM": 8000.0,
+   "centreM": 7350.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-SLD-1",
+   "label": "SLD block 1 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "SLD"
+   ],
+   "fromM": 1500.0,
+   "toM": 2800.0,
+   "centreM": 2150.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-SLD-2",
+   "label": "SLD block 2 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "SLD"
+   ],
+   "fromM": 2800.0,
+   "toM": 4100.0,
+   "centreM": 3450.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-SLD-3",
+   "label": "SLD block 3 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "SLD"
+   ],
+   "fromM": 4100.0,
+   "toM": 5400.0,
+   "centreM": 4750.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-SLD-4",
+   "label": "SLD block 4 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "SLD"
+   ],
+   "fromM": 5400.0,
+   "toM": 6700.0,
+   "centreM": 6050.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-SLD-5",
+   "label": "SLD block 5 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "SLD"
+   ],
+   "fromM": 6700.0,
+   "toM": 8000.0,
+   "centreM": 7350.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-SLU-1",
+   "label": "SLU block 1 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "SLU"
+   ],
+   "fromM": 1500.0,
+   "toM": 2800.0,
+   "centreM": 2150.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-SLU-2",
+   "label": "SLU block 2 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "SLU"
+   ],
+   "fromM": 2800.0,
+   "toM": 4100.0,
+   "centreM": 3450.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-SLU-3",
+   "label": "SLU block 3 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "SLU"
+   ],
+   "fromM": 4100.0,
+   "toM": 5400.0,
+   "centreM": 4750.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-SLU-4",
+   "label": "SLU block 4 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "SLU"
+   ],
+   "fromM": 5400.0,
+   "toM": 6700.0,
+   "centreM": 6050.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-SLU-5",
+   "label": "SLU block 5 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "SLU"
+   ],
+   "fromM": 6700.0,
+   "toM": 8000.0,
+   "centreM": 7350.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-FSD-1",
+   "label": "FSD block 1 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "FSD"
+   ],
+   "fromM": 1500.0,
+   "toM": 2800.0,
+   "centreM": 2150.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-FSD-2",
+   "label": "FSD block 2 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "FSD"
+   ],
+   "fromM": 2800.0,
+   "toM": 4100.0,
+   "centreM": 3450.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-FSD-3",
+   "label": "FSD block 3 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "FSD"
+   ],
+   "fromM": 4100.0,
+   "toM": 5400.0,
+   "centreM": 4750.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-FSD-4",
+   "label": "FSD block 4 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "FSD"
+   ],
+   "fromM": 5400.0,
+   "toM": 6700.0,
+   "centreM": 6050.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-FSD-5",
+   "label": "FSD block 5 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "FSD"
+   ],
+   "fromM": 6700.0,
+   "toM": 8000.0,
+   "centreM": 7350.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-FSU-1",
+   "label": "FSU block 1 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "FSU"
+   ],
+   "fromM": 1500.0,
+   "toM": 2800.0,
+   "centreM": 2150.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-FSU-2",
+   "label": "FSU block 2 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "FSU"
+   ],
+   "fromM": 2800.0,
+   "toM": 4100.0,
+   "centreM": 3450.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-FSU-3",
+   "label": "FSU block 3 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "FSU"
+   ],
+   "fromM": 4100.0,
+   "toM": 5400.0,
+   "centreM": 4750.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-FSU-4",
+   "label": "FSU block 4 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "FSU"
+   ],
+   "fromM": 5400.0,
+   "toM": 6700.0,
+   "centreM": 6050.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-FSU-5",
+   "label": "FSU block 5 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "FSU"
+   ],
+   "fromM": 6700.0,
+   "toM": 8000.0,
+   "centreM": 7350.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-THD-1",
+   "label": "THD block 1 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "THD"
+   ],
+   "fromM": 1500.0,
+   "toM": 2800.0,
+   "centreM": 2150.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-THD-2",
+   "label": "THD block 2 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "THD"
+   ],
+   "fromM": 2800.0,
+   "toM": 4100.0,
+   "centreM": 3450.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-THD-3",
+   "label": "THD block 3 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "THD"
+   ],
+   "fromM": 4100.0,
+   "toM": 5400.0,
+   "centreM": 4750.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-THD-4",
+   "label": "THD block 4 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "THD"
+   ],
+   "fromM": 5400.0,
+   "toM": 6700.0,
+   "centreM": 6050.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-THD-5",
+   "label": "THD block 5 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "THD"
+   ],
+   "fromM": 6700.0,
+   "toM": 8000.0,
+   "centreM": 7350.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-THU-1",
+   "label": "THU block 1 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "THU"
+   ],
+   "fromM": 1500.0,
+   "toM": 2800.0,
+   "centreM": 2150.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-THU-2",
+   "label": "THU block 2 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "THU"
+   ],
+   "fromM": 2800.0,
+   "toM": 4100.0,
+   "centreM": 3450.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-THU-3",
+   "label": "THU block 3 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "THU"
+   ],
+   "fromM": 4100.0,
+   "toM": 5400.0,
+   "centreM": 4750.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-THU-4",
+   "label": "THU block 4 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "THU"
+   ],
+   "fromM": 5400.0,
+   "toM": 6700.0,
+   "centreM": 6050.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-S-THU-5",
+   "label": "THU block 5 (South)",
+   "kind": "BLOCK",
+   "corridor": "SOUTH",
+   "lines": [
+    "THU"
+   ],
+   "fromM": 6700.0,
+   "toM": 8000.0,
+   "centreM": 7350.0,
+   "lengthM": 1300.0,
+   "headwaySec": 120.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-D-BRD-1",
+   "label": "BRD block 1 (Diva)",
+   "kind": "BLOCK",
+   "corridor": "DIVA",
+   "lines": [
+    "BRD"
+   ],
+   "fromM": 1400.0,
+   "toM": 4200.0,
+   "centreM": 2800.0,
+   "lengthM": 2800.0,
+   "headwaySec": 300.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-D-BRD-2",
+   "label": "BRD block 2 (Diva)",
+   "kind": "BLOCK",
+   "corridor": "DIVA",
+   "lines": [
+    "BRD"
+   ],
+   "fromM": 4200.0,
+   "toM": 8000.0,
+   "centreM": 6100.0,
+   "lengthM": 3800.0,
+   "headwaySec": 300.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-D-BRU-1",
+   "label": "BRU block 1 (Diva)",
+   "kind": "BLOCK",
+   "corridor": "DIVA",
+   "lines": [
+    "BRU"
+   ],
+   "fromM": 1400.0,
+   "toM": 4200.0,
+   "centreM": 2800.0,
+   "lengthM": 2800.0,
+   "headwaySec": 300.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-D-BRU-2",
+   "label": "BRU block 2 (Diva)",
+   "kind": "BLOCK",
+   "corridor": "DIVA",
+   "lines": [
+    "BRU"
+   ],
+   "fromM": 4200.0,
+   "toM": 8000.0,
+   "centreM": 6100.0,
+   "lengthM": 3800.0,
+   "headwaySec": 300.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-D-GDC-1",
+   "label": "GDC block 1 (Diva)",
+   "kind": "BLOCK",
+   "corridor": "DIVA",
+   "lines": [
+    "GDC"
+   ],
+   "fromM": 1400.0,
+   "toM": 4200.0,
+   "centreM": 2800.0,
+   "lengthM": 2800.0,
+   "headwaySec": 300.0,
+   "capacity": 1
+  },
+  {
+   "id": "BLK-D-GDC-2",
+   "label": "GDC block 2 (Diva)",
+   "kind": "BLOCK",
+   "corridor": "DIVA",
+   "lines": [
+    "GDC"
+   ],
+   "fromM": 4200.0,
+   "toM": 8000.0,
+   "centreM": 6100.0,
+   "lengthM": 3800.0,
+   "headwaySec": 300.0,
+   "capacity": 1
+  }
+ ]
+}

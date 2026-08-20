@@ -6,7 +6,7 @@ SafetyValidation shape (passed + checks[]) the console's SafetyPanel renders.
 """
 from __future__ import annotations
 
-from ..network.topology import resource_by_id
+from ..network.net import resources as net_resources
 from ..twin.predict import AnalyticState, Conflict
 from ..twin.state import AppliedAction
 
@@ -14,15 +14,18 @@ from ..twin.state import AppliedAction
 def validate(action: AppliedAction, after: AnalyticState, conflict: Conflict,
              resolved: bool, mode: str = "RESOLUTION") -> dict:
     st = after.trains.get(action.train_id)
-    res = resource_by_id[conflict.resource_id]
+    res = net_resources[conflict.resource_id]
     required = round(res.headway_sec * after.headway_multiplier)
 
     containment = mode == "CONTAINMENT"
     speed_ok = (action.kind != "SPEED_REGULATION"
                 or ((action.speed_kmh or 0) >= 15
-                    and (action.speed_kmh or 0) <= (st.nominal_speed_kmh if st else 0)))
-    route_ok = (action.kind != "ALTERNATE_ROUTE"
-                or (bool(action.route_id) and action.route_id not in after.unavailable_routes))
+                    and (action.speed_kmh or 0) <= (st.line_speed_kmh if st else 0)))
+    # A re-platforming is only valid onto a face that is actually in service.
+    route_ok = (action.kind not in ("ALTERNATE_ROUTE", "PLATFORM_REASSIGNMENT")
+                or (bool(action.platform_id or action.route_id)
+                    and (action.platform_id or "") not in after.blocked_resources
+                    and (action.route_id or "") not in after.unavailable_routes))
     # A containment command may protect a movement from an unavailable
     # resource, but it must not claim that the resource has been restored.
     plt_ok = containment or conflict.resource_id not in after.blocked_resources
@@ -36,7 +39,7 @@ def validate(action: AppliedAction, after: AnalyticState, conflict: Conflict,
         {"id": "SPD", "label": "Commanded speed within line limit", "passed": speed_ok,
          "detail": "Within permissible section speed" if speed_ok else "Outside permissible band"},
         {"id": "RTE", "label": "Route availability", "passed": route_ok,
-         "detail": "Route set is available" if route_ok else "Route not available in current state"},
+         "detail": "Route can be set" if route_ok else "Route or platform not available"},
         {"id": "PLT", "label": "Platform / block availability", "passed": plt_ok,
          "detail": ("Movement protected before the unavailable resource"
                     if containment and conflict.resource_id in after.blocked_resources
