@@ -111,9 +111,24 @@ class TrainRuntime:
     regulated_kmh: float | None = None
     pending_hold_sec: float = 0.0
     pending_event_hold: float = 0.0
+    # Absolute controller release time.  Repeated advice extends to the same
+    # release instant instead of adding another hold on top of an active one.
+    controller_hold_until_sec: float = 0.0
+    controller_hold_resource_id: str | None = None
+    # Resource lifecycle is explicit so commands can be rejected while a train
+    # owns or is queued for infrastructure.  This also makes leaked leases
+    # observable in tests and diagnostics.
+    queued_resource_id: str | None = None
+    current_resource_id: str | None = None
+    regulated_until_sec: float | None = None
+    regulation_expires_after_resource_id: str | None = None
 
     # Booked-time accounting.
     actual_dep_sec: float | None = None
+    # Service-seconds at the far boundary.  Terminal metrics use this rather
+    # than a mid-run lateness snapshot, so a train can never vanish from a
+    # fixed benchmark cohort when the rolling live window retires it.
+    actual_exit_sec: float | None = None
     departed_platform: bool = False
 
     def sample(self, now: float) -> tuple[float, float]:
@@ -186,6 +201,15 @@ class AppliedAction:
     hold_sec: float | None = None
     route_id: str | None = None
     platform_id: str | None = None
+    action_id: str | None = None
+    plan_id: str | None = None
+    effective_resource_id: str | None = None
+    reason_conflict_id: str | None = None
+    release_at_sec: float | None = None
+    expires_after_resource_id: str | None = None
+    expires_at_sec: float | None = None
+    lifecycle: str = "PROPOSED"
+    supersedes_action_id: str | None = None
 
     def as_dict(self) -> dict:
         out: dict = {"kind": self.kind, "trainId": self.train_id}
@@ -197,4 +221,21 @@ class AppliedAction:
             out["routeId"] = self.route_id
         if self.platform_id is not None:
             out["platformId"] = self.platform_id
+        if self.action_id is not None:
+            out["actionId"] = self.action_id
+        if self.plan_id is not None:
+            out["planId"] = self.plan_id
+        if self.effective_resource_id is not None:
+            out["effectiveResourceId"] = self.effective_resource_id
+        if self.reason_conflict_id is not None:
+            out["reasonConflictId"] = self.reason_conflict_id
+        if self.release_at_sec is not None:
+            out["releaseAtSec"] = round(self.release_at_sec, 3)
+        if self.expires_after_resource_id is not None:
+            out["expiresAfterResourceId"] = self.expires_after_resource_id
+        if self.expires_at_sec is not None:
+            out["expiresAtSec"] = round(self.expires_at_sec, 3)
+        out["lifecycle"] = self.lifecycle
+        if self.supersedes_action_id is not None:
+            out["supersedesActionId"] = self.supersedes_action_id
         return out

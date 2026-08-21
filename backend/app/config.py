@@ -108,6 +108,10 @@ class Settings(BaseSettings):
     artifacts_dir: str = "app/prediction/artifacts"
     ml_confidence_floor: float = 0.35        # below this -> LOW_CONFIDENCE, use deterministic
 
+    # --- Reproducible release benchmark ---
+    benchmark_report_path: str = "data/benchmark-latest.json"
+    benchmark_signing_key: str | None = None
+
     weights: ObjectiveWeights = Field(default_factory=ObjectiveWeights)
 
 

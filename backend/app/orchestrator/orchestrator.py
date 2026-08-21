@@ -32,7 +32,8 @@ from ..twin.engine import DelayEvent, SimulationEngine
 from ..twin.metrics import compute_kpis
 from ..twin.predict import apply_action, predict, project_state_at
 from ..twin.state import AppliedAction
-from ..optimize.safety import validate
+from ..optimize.candidates import Candidate
+from ..optimize.whatif import delay_profile, evaluate, evaluate_do_nothing
 from ..network.net import network_pack, timetable_pack, freight_pack
 
 VALID_SPEEDS = {1, 2, 5, 10, 20}
@@ -44,9 +45,13 @@ logger = logging.getLogger("railtwin.orchestrator")
 
 class SimulationOrchestrator:
     def __init__(self, scenario_id: str = "BASE"):
-        self.clock_mode = settings.clock_mode.upper()
+        self.live_locked = (
+            settings.railradar_mode.lower() == "live"
+            and bool(settings.railradar_api_key)
+        )
+        self.clock_mode = "LIVE" if self.live_locked else settings.clock_mode.upper()
         self.playing = True
-        self.speed = settings.default_speed
+        self.speed = 1 if self.clock_mode == "LIVE" else settings.default_speed
         self.horizon = settings.default_horizon_sec
         self.horizon_offset = 0.0
         self._clients: set[Any] = set()
@@ -76,6 +81,7 @@ class SimulationOrchestrator:
         self._suggestion_generated_at = 0.0
         self._last_decision_status: dict = {"status": "READY"}
         self._last_validation: dict | None = None
+        self._conflict_seen: dict[str, tuple[float, float]] = {}
         # Conflicts that already have a command against them. Re-issuing one
         # stacks a second hold on a train that is already being held.
         self._actioned: set[str] = set()
@@ -156,6 +162,18 @@ class SimulationOrchestrator:
         self._suggestion_generated_at = self.engine.now
         astate = self.engine.analytic_state()
         self._cached_prediction = predict(astate, self.horizon)
+        active_ids = set()
+        for conflict in self._cached_prediction.conflicts:
+            active_ids.add(conflict.episode_id or conflict.id)
+            key = conflict.episode_id or conflict.id
+            first, _ = self._conflict_seen.get(key, (self.engine.now, self.engine.now))
+            self._conflict_seen[key] = (first, self.engine.now)
+            conflict.first_seen_sec = first
+            conflict.last_seen_sec = self.engine.now
+        self._conflict_seen = {
+            key: value for key, value in self._conflict_seen.items()
+            if key in active_ids or self.engine.now - value[1] <= self.horizon
+        }
         self._cached_kpis = compute_kpis(self.engine, astate, self._cached_prediction)
         # A scrubbed view is the same twin projected forward, not a second model.
         self._projected = (project_state_at(astate, self.horizon_offset)
@@ -314,12 +332,26 @@ class SimulationOrchestrator:
         """What the console must say about where its numbers came from."""
         ingest = getattr(self, "ingest", None)
         observations = getattr(ingest, "observations", {}) if ingest else {}
+        feed_state = ingest.feed_state() if ingest else "OFF"
+        last_live_at = getattr(ingest, "last_live_at", None)
+        age = max(0.0, time.time() - last_live_at) if last_live_at else None
         return {
             "mode": getattr(getattr(ingest, "client", None), "mode", "off"),
+            "sourceState": feed_state,
             "enabled": bool(ingest and ingest.enabled),
             "observedTrains": len(observations),
             "observations": [o.as_dict() for o in observations.values()][:12],
             "lastPollAt": getattr(ingest, "last_poll_at", None),
+            "lastLiveAt": last_live_at,
+            "observationAgeSec": round(age, 1) if age is not None else None,
+            "matchedToTimetable": getattr(ingest, "matched", 0),
+            "unmatched": getattr(ingest, "unmatched", []),
+            "fallbackReason": getattr(ingest, "degraded", ""),
+            "budgetRemaining": getattr(ingest, "budget_remaining", None),
+            "passengerProvenance": (
+                "RailRadar running-status observations assimilated into the twin"
+                if feed_state == "LIVE" else "Timestamped RailRadar replay/fallback"),
+            "freightProvenance": "SYNTHETIC FREIGHT · no public live freight feed",
             "freightNote": "Goods movements are synthetic - no public live feed exists.",
         }
 
@@ -350,7 +382,8 @@ class SimulationOrchestrator:
         cmd = msg.get("cmd")
         async with self._lock:
             if cmd in ("pause",):
-                self.playing = False
+                if self.clock_mode != "LIVE":
+                    self.playing = False
             elif cmd in ("resume", "play"):
                 self.playing = True
             elif cmd == "set_speed":
@@ -360,6 +393,8 @@ class SimulationOrchestrator:
             elif cmd == "set_clock_mode":
                 self._set_clock_mode(str(msg.get("mode", "LIVE")).upper())
             elif cmd == "seek":
+                if self.clock_mode == "LIVE":
+                    return
                 target = float(msg.get("simTimeSec", self.engine.now))
                 self.playing = False
                 delta = target - self.engine.now
@@ -397,6 +432,8 @@ class SimulationOrchestrator:
                     eng.observe(str(msg.get("number", "")), float(msg.get("latenessSec", 0)))
 
     def _set_clock_mode(self, mode: str) -> None:
+        if self.live_locked and mode != "LIVE":
+            return
         if mode not in ("LIVE", "DEMO") or mode == self.clock_mode:
             return
         self.clock_mode = mode
@@ -465,19 +502,21 @@ class SimulationOrchestrator:
         # Re-validate against the CURRENT state, not the state the option was
         # generated in - the recommendation may be seconds old.
         before = self.engine.analytic_state()
-        after = apply_action(before, action)
-        projected = predict(after, self.horizon)
-        residual = any(
-            c.severity == "CRITICAL" and c.resource_id == current.resource_id
-            and {c.train_a, c.train_b} & {current.train_a, current.train_b, action.train_id}
-            for c in projected.conflicts)
         mode = "CONTAINMENT" if msg.get("responseMode") == "CONTAINMENT" else "RESOLUTION"
-        safety = validate(action, after, current, not residual, mode)
-        record["safety"] = safety
+        projection, projection_reason = self._live_projection_check(
+            before, action, current, mode)
+        record.update(projection)
+        safety = projection["safety"]
         if not safety.get("passed"):
             self._last_decision_status = {"status": "REJECTED",
                                           "reason": "Failed safety re-validation"}
             record.update(outcome="REJECTED", reason=self._last_decision_status["reason"])
+            self._commit(record)
+            return
+        if projection_reason is not None:
+            self._last_decision_status = {
+                "status": "REJECTED", "reason": projection_reason}
+            record.update(outcome="REJECTED", reason=projection_reason)
             self._commit(record)
             return
 
@@ -502,7 +541,15 @@ class SimulationOrchestrator:
 
         lateness_before = dto.kpis_dict(self._cached_kpis).get("totalLatenessSec", 0.0)
         self._actioned.add(conflict_id or "")
-        self.engine.apply_action(action)
+        applied = self.engine.apply_action(action)
+        if not applied:
+            self._actioned.discard(conflict_id or "")
+            reason = ("The command is duplicate, expired, or the train has already "
+                      "entered the protected resource.")
+            self._last_decision_status = {"status": "REJECTED", "reason": reason}
+            record.update(outcome="REJECTED", reason=reason)
+            self._commit(record)
+            return
         self._refresh_derived()
         record["latenessBeforeSec"] = lateness_before
         record["latenessAfterSec"] = dto.kpis_dict(self._cached_kpis).get("totalLatenessSec", 0.0)
@@ -534,18 +581,15 @@ class SimulationOrchestrator:
             return
 
         before = self.engine.analytic_state()
-        after = apply_action(before, action)
-        projected = predict(after, self.horizon)
-        residual = any(
-            c.severity == "CRITICAL" and c.resource_id == current.resource_id
-            and {c.train_a, c.train_b} & {current.train_a, current.train_b, action.train_id}
-            for c in projected.conflicts)
         mode = "CONTAINMENT" if msg.get("responseMode") == "CONTAINMENT" else "RESOLUTION"
-        safety = validate(action, after, current, not residual, mode)
+        projection, projection_reason = self._live_projection_check(
+            before, action, current, mode)
+        safety = projection["safety"]
         budget = self._would_breach_budget(action)
 
         failed = [c for c in safety.get("checks", []) if not c.get("passed")]
-        passed = bool(safety.get("passed")) and budget is None
+        passed = (bool(safety.get("passed")) and budget is None
+                  and projection_reason is None)
         reason = ""
         if not safety.get("passed"):
             # A speed or route breach is the direct cause; SEP is usually a
@@ -555,14 +599,62 @@ class SimulationOrchestrator:
             reason = failed[0]["detail"] if failed else "Fails interlocking validation."
         elif budget is not None:
             reason = budget
+        elif projection_reason is not None:
+            reason = projection_reason
         self._last_validation = {
             "conflictId": conflict_id,
             "action": action.as_dict(),
             "passed": passed,
-            "clears": not residual,
+            "clears": projection["clears"],
             "reason": reason,
             "checks": safety.get("checks", []),
+            **{key: value for key, value in projection.items()
+               if key not in {"safety", "clears"}},
         }
+
+    def _live_projection_check(self, before, action: AppliedAction, conflict,
+                               mode: str) -> tuple[dict, str | None]:
+        """Re-run a selected What-if against the current authoritative frame.
+
+        A displayed option can be seconds old by the time it is accepted.
+        Safety alone is insufficient because a safe route change can join a
+        newly formed downstream queue.  This uses the same literal no-command
+        rollout and action evaluator that produced the What-if result.
+        """
+        base = delay_profile(before)
+        reference = evaluate_do_nothing(before, base, conflict, self.horizon)
+        candidate = Candidate(
+            "LIVE-REVALIDATION", "L", "Live operator selection", action,
+            "LOW" if action.kind in {"PLATFORM_REASSIGNMENT", "ALTERNATE_ROUTE"}
+            else "NONE")
+        result = evaluate(
+            before, base, candidate, conflict, self.horizon,
+            response_class=mode, reference=reference)
+        saving = reference.network_delay_sec - result.network_delay_sec
+        projection = {
+            "safety": result.safety,
+            "clears": result.conflict_resolved,
+            "projectedDelayNoActionSec": round(reference.network_delay_sec, 1),
+            "projectedDelayWithActionSec": round(result.network_delay_sec, 1),
+            "projectedDelaySavingSec": round(saving, 1),
+            "projectedResidualCriticalConflicts": result.residual_conflicts,
+        }
+        if not result.feasible or not result.safety.get("passed"):
+            return projection, "The live queue rollout no longer permits this action."
+        if mode == "RESOLUTION" and not result.conflict_resolved:
+            return projection, "The live queue rollout no longer clears this conflict."
+        if result.residual_conflicts > 0:
+            return projection, "The action would create an additional critical conflict."
+        # A resolution must improve the whole-section finish profile. Safety
+        # containment may tie FIFO, but it may never make the queue later.
+        required_saving = 1.0 if mode == "RESOLUTION" else 0.0
+        if saving < required_saving - 1e-6:
+            if mode == "RESOLUTION":
+                return projection, (
+                    "The live queue no longer shows at least one second of whole-section "
+                    "delay reduction versus taking no action.")
+            return projection, "The containment action would make the live queue later."
+        return projection, None
 
     def _would_breach_budget(self, action: AppliedAction) -> str | None:
         """Would applying this push AI total lateness past the do-nothing shadow?
@@ -605,7 +697,15 @@ def _action(d: dict) -> AppliedAction:
     return AppliedAction(
         kind=d.get("kind", "NO_ACTION"), train_id=d.get("trainId", ""),
         speed_kmh=d.get("speedKmh"), hold_sec=d.get("holdSec"),
-        route_id=d.get("routeId"), platform_id=d.get("platformId"))
+        route_id=d.get("routeId"), platform_id=d.get("platformId"),
+        action_id=d.get("actionId"), plan_id=d.get("planId"),
+        effective_resource_id=d.get("effectiveResourceId"),
+        release_at_sec=d.get("releaseAtSec"),
+        expires_after_resource_id=d.get("expiresAfterResourceId"),
+        expires_at_sec=d.get("expiresAtSec"),
+        lifecycle=d.get("lifecycle", "PROPOSED"),
+        supersedes_action_id=d.get("supersedesActionId"),
+        reason_conflict_id=d.get("reasonConflictId"))
 
 
 def _event(d: dict) -> DelayEvent:

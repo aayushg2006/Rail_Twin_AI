@@ -40,6 +40,10 @@ export function TopBar() {
   const clock = bundle ? clockOf(bundle.wallClockMs) : "--:--:--";
   const critical = conflicts.filter((c) => c.severity === "CRITICAL").length;
   const live = bundle?.liveData;
+  const feedState = live?.sourceState ?? "OFF";
+  const feedTone =
+    feedState === "LIVE" ? "ok" : feedState === "DEGRADED" || feedState === "STALE" ? "warning" : "dim";
+  const feedLabel = feedState.replaceAll("_", " ");
 
   const link =
     connection === "CONNECTED"
@@ -81,9 +85,9 @@ export function TopBar() {
 
       <div className="ml-auto flex items-center gap-2">
         {live?.enabled ? (
-          <Tag tone={live.mode === "live" ? "ok" : "dim"}>
+          <Tag tone={feedTone}>
             {live.mode === "live" ? "RailRadar live" : "RailRadar replay"} ·{" "}
-            {live.observedTrains} observed
+            {feedLabel} · {live.observedTrains} observed
           </Tag>
         ) : (
           <Tag tone="dim">No live feed</Tag>

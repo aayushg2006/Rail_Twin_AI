@@ -73,12 +73,11 @@ def build(plans: dict[str, list], headway_of, blocked: set[str] | None = None) -
         prev: Node | None = None
         prev_exit = 0.0
         for i, w in enumerate(plan):
-            if w.resource_id in blocked:
-                continue
             node = Node(tid, w.resource_id, i)
             g.nodes.append(node)
             g.train_of[node] = tid
-            g.release[node] = max(0.0, w.enter)
+            g.release[node] = (86_400.0 if w.resource_id in blocked
+                               else max(0.0, w.enter))
             occupancy[node] = max(1.0, w.exit - w.enter)
             if prev is not None:
                 # Blocking: the train cannot reach this resource before it has

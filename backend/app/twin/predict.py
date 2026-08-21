@@ -12,6 +12,7 @@ whole network for every candidate action without cloning the SimPy environment.
 from __future__ import annotations
 
 import copy
+import heapq
 from dataclasses import dataclass, field
 
 from ..network.chainage import Position
@@ -46,6 +47,13 @@ class AnalyticTrain:
     departed_platform: bool = False
     source: str = ""
     provenance: str = ""
+    current_resource_id: str | None = None
+    queued_resource_id: str | None = None
+    data_source: str = "TIMETABLE_ESTIMATE"
+    observed_at_epoch: float | None = None
+    scheduled_hold_sec: float = 0.0
+    scheduled_hold_resource_id: str | None = None
+    scheduled_release_at_sec: float | None = None
 
     @property
     def is_freight(self) -> bool:
@@ -61,6 +69,7 @@ class AnalyticState:
     blocked_resources: set[str] = field(default_factory=set)
     headway_multiplier: float = 1.0
     unavailable_routes: set[str] = field(default_factory=set)
+    resources: dict[str, "AnalyticResource"] = field(default_factory=dict)
 
     def clone(self) -> "AnalyticState":
         return AnalyticState(
@@ -70,7 +79,17 @@ class AnalyticState:
             blocked_resources=set(self.blocked_resources),
             headway_multiplier=self.headway_multiplier,
             unavailable_routes=set(self.unavailable_routes),
+            resources={k: copy.copy(v) for k, v in self.resources.items()},
         )
+
+
+@dataclass
+class AnalyticResource:
+    resource_id: str
+    free_at_sec: float = 0.0       # seconds from the analytic snapshot
+    owner: str | None = None
+    queued: tuple[str, ...] = ()
+    blocked: bool = False
 
 
 @dataclass
@@ -89,6 +108,11 @@ class Conflict:
     required_separation_sec: float
     probability: float = 0.0         # filled by the ML layer
     time_to_conflict: float = 0.0
+    episode_id: str = ""
+    evidence: str = "PREDICTED"
+    confidence: float = 0.5
+    first_seen_sec: float | None = None
+    last_seen_sec: float | None = None
 
 
 @dataclass
@@ -97,6 +121,11 @@ class Prediction:
     conflicts: list[Conflict]
     plans: dict[str, list["PassWindow"]]
     paths: dict[str, list[Position]]
+    # Earliest demand windows before interlocking queues are imposed.  Conflict
+    # detection and CP-SAT use these; `plans` contains the realizable queued
+    # schedule used for consequences and controller validation.
+    free_plans: dict[str, list["PassWindow"]] = field(default_factory=dict)
+    queue_delay_sec: dict[str, float] = field(default_factory=dict)
 
 
 @dataclass
@@ -106,6 +135,14 @@ class PassWindow:
     enter: float
     exit: float
     s: float
+
+
+@dataclass
+class QueueRollout:
+    plans: dict[str, list[PassWindow]]
+    finish_sec: dict[str, float]
+    queue_delay_sec: dict[str, float]
+    blocked_trains: set[str] = field(default_factory=set)
 
 
 def _limit_for(state: AnalyticState, st: AnalyticTrain, s: float) -> float:
@@ -127,7 +164,7 @@ def project_plan(state: AnalyticState, tid: str) -> list[PassWindow]:
     if st is None or route is None or st.finished:
         return []
 
-    t = max(0.0, st.entry_at_sec - state.sim_time) + st.hold_remaining + st.dwell_remaining
+    t = max(0.0, st.entry_at_sec - state.sim_time) + st.hold_remaining
     s = st.s
     v = st.speed_ms
     traction = traction_for(st.service_class)
@@ -136,7 +173,31 @@ def project_plan(state: AnalyticState, tid: str) -> list[PassWindow]:
     for use in route.uses:
         if use.exit_s <= s + EPS:
             continue
+        if st.scheduled_hold_resource_id == use.resource_id:
+            if st.scheduled_release_at_sec is not None:
+                t += max(0.0, st.scheduled_release_at_sec - (state.sim_time + t))
+            else:
+                t += st.scheduled_hold_sec
         is_platform = use.resource_id == route.platform_id
+        already_inside = (
+            st.current_resource_id == use.resource_id
+            or (is_platform and st.dwell_remaining > 0
+                and use.enter_s - EPS <= s <= use.exit_s + EPS)
+        )
+        if already_inside:
+            enter = 0.0
+            if is_platform:
+                t = max(1.0, st.dwell_remaining)
+                v = 0.0
+            else:
+                limit = _limit_for(state, st, s)
+                profile = build_profile(
+                    max(0.0, use.exit_s - s), v, limit, limit, traction)
+                t = profile.duration
+                v = profile.v_exit
+            s = max(s, use.exit_s)
+            out.append(PassWindow(tid, use.resource_id, enter, t, use.enter_s))
+            continue
         limit = _limit_for(state, st, max(s, use.enter_s))
         if use.enter_s > s + EPS:
             v_exit = 0.0 if is_platform else limit
@@ -156,6 +217,98 @@ def project_plan(state: AnalyticState, tid: str) -> list[PassWindow]:
         s = max(s, use.exit_s)
         out.append(PassWindow(tid, use.resource_id, enter, t, use.enter_s))
     return out
+
+
+def queue_rollout(state: AnalyticState,
+                  free_plans: dict[str, list[PassWindow]] | None = None,
+                  horizon_sec: float | None = None) -> QueueRollout:
+    """Propagate FIFO resource queues over every remaining train path.
+
+    This is deliberately small and deterministic, but it mirrors the part of
+    the SimPy twin that the old predictor omitted: a delayed resource entry
+    shifts every downstream arrival, which can in turn join a different queue.
+    Both the no-action reference and every candidate pass through this exact
+    scheduler.
+    """
+    source = free_plans or {
+        tid: project_plan(state, tid)
+        for tid, st in state.trains.items() if not st.finished
+    }
+    plans: dict[str, list[PassWindow]] = {tid: [] for tid in source}
+    queue_delay = {tid: 0.0 for tid in source}
+    finish: dict[str, float] = {}
+    blocked: set[str] = set()
+
+    # Per-resource availability starts with the live headway gate.  An owner
+    # that appears in the plans will naturally be dispatched first at t=0.
+    available = {
+        rid: max(0.0, snap.free_at_sec)
+        for rid, snap in state.resources.items()
+    }
+    queue_rank: dict[tuple[str, str], int] = {}
+    for rid, snap in state.resources.items():
+        if snap.owner:
+            queue_rank[(rid, snap.owner)] = -1
+        for index, tid in enumerate(snap.queued):
+            queue_rank[(rid, tid)] = index
+
+    # A heap item is the earliest time a train can request its next resource.
+    # The original free-window times provide travel gaps between resources;
+    # realized exit times carry every upstream wait forward.
+    heap: list[tuple[float, int, int, str, int]] = []
+    serial = 0
+    for tid, seq in source.items():
+        if not seq:
+            route = state.routes.get(tid)
+            if route is not None:
+                free_finish = project_finish_free(state, tid)
+                if free_finish is not None:
+                    finish[tid] = free_finish
+            continue
+        first = seq[0]
+        heapq.heappush(heap, (
+            first.enter, queue_rank.get((first.resource_id, tid), 10_000),
+            serial, tid, 0))
+        serial += 1
+
+    while heap:
+        ready, _, _, tid, index = heapq.heappop(heap)
+        seq = source[tid]
+        window = seq[index]
+        rid = window.resource_id
+        spec = net_resources.get(rid)
+        if spec is None:
+            continue
+        if rid in state.blocked_resources or state.resources.get(
+                rid, AnalyticResource(rid)).blocked:
+            blocked.add(tid)
+            finish[tid] = (horizon_sec + 3600.0
+                           if horizon_sec is not None else 86_400.0)
+            continue
+
+        start = max(ready, available.get(rid, 0.0))
+        duration = max(1.0, window.exit - window.enter)
+        end = start + duration
+        queue_delay[tid] += max(0.0, start - ready)
+        plans[tid].append(PassWindow(tid, rid, start, end, window.s))
+        available[rid] = end + spec.headway_sec * state.headway_multiplier
+
+        if index + 1 < len(seq):
+            nxt = seq[index + 1]
+            travel_gap = max(0.0, nxt.enter - window.exit)
+            next_ready = end + travel_gap
+            if horizon_sec is None or next_ready <= horizon_sec + 3600.0:
+                heapq.heappush(heap, (
+                    next_ready,
+                    queue_rank.get((nxt.resource_id, tid), 10_000),
+                    serial, tid, index + 1))
+                serial += 1
+        else:
+            free_finish = project_finish_free(state, tid)
+            tail = max(0.0, (free_finish or window.exit) - window.exit)
+            finish[tid] = end + tail
+
+    return QueueRollout(plans, finish, queue_delay, blocked)
 
 
 def project_arrival(state: AnalyticState, tid: str, target_s: float) -> float | None:
@@ -180,11 +333,16 @@ def project_arrival(state: AnalyticState, tid: str, target_s: float) -> float | 
     return t
 
 
-def project_finish(state: AnalyticState, tid: str) -> float | None:
+def project_finish_free(state: AnalyticState, tid: str) -> float | None:
     route = state.routes.get(tid)
     if route is None:
         return None
     return project_arrival(state, tid, route.length_m)
+
+
+def project_finish(state: AnalyticState, tid: str) -> float | None:
+    """Queue-aware finish time for one train in the shared network rollout."""
+    return queue_rollout(state).finish_sec.get(tid)
 
 
 def apply_action(state: AnalyticState, action) -> AnalyticState:
@@ -200,7 +358,11 @@ def apply_action(state: AnalyticState, action) -> AnalyticState:
     if kind == "SPEED_REGULATION" and action.speed_kmh:
         st.regulated_kmh = max(5.0, float(action.speed_kmh))
     elif kind == "HOLD" and action.hold_sec:
-        st.hold_remaining += float(action.hold_sec)
+        st.scheduled_hold_sec = float(action.hold_sec)
+        st.scheduled_hold_resource_id = action.effective_resource_id
+        st.scheduled_release_at_sec = action.release_at_sec
+        if action.effective_resource_id is None:
+            st.hold_remaining = max(st.hold_remaining, float(action.hold_sec))
     elif kind in ("PLATFORM_REASSIGNMENT", "ALTERNATE_ROUTE"):
         f = fleet_by_id.get(action.train_id)
         current = nxt.routes.get(action.train_id)
@@ -216,13 +378,13 @@ def apply_action(state: AnalyticState, action) -> AnalyticState:
 
 
 def predict(state: AnalyticState, horizon_sec: float = DEFAULT_HORIZON_SEC) -> Prediction:
-    plans: dict[str, list[PassWindow]] = {}
+    free_plans: dict[str, list[PassWindow]] = {}
     windows: dict[str, list[PassWindow]] = {}
     for tid, st in state.trains.items():
         if st.finished:
             continue
         plan = project_plan(state, tid)
-        plans[tid] = plan
+        free_plans[tid] = plan
         for w in plan:
             if w.enter <= horizon_sec:
                 windows.setdefault(w.resource_id, []).append(w)
@@ -244,7 +406,8 @@ def predict(state: AnalyticState, horizon_sec: float = DEFAULT_HORIZON_SEC) -> P
                     resource_id=rid, resource_label=spec.label, resource_kind=spec.kind,
                     at=at, train_a=w.train_id, train_b="", eta_sec=w.enter,
                     separation_sec=0.0, required_separation_sec=required,
-                    time_to_conflict=w.enter))
+                    time_to_conflict=w.enter,
+                    **_evidence(state, rid, w.train_id, "")))
             continue
 
         for i in range(1, len(ordered)):
@@ -272,7 +435,8 @@ def predict(state: AnalyticState, horizon_sec: float = DEFAULT_HORIZON_SEC) -> P
                 resource_id=rid, resource_label=spec.label, resource_kind=spec.kind,
                 at=at, train_a=a.train_id, train_b=b.train_id, eta_sec=a.enter,
                 separation_sec=separation, required_separation_sec=required,
-                time_to_conflict=a.enter))
+                time_to_conflict=a.enter,
+                **_evidence(state, rid, a.train_id, b.train_id)))
 
     conflicts.sort(key=lambda c: (0 if c.severity == "CRITICAL" else 1, c.eta_sec))
 
@@ -286,7 +450,37 @@ def predict(state: AnalyticState, horizon_sec: float = DEFAULT_HORIZON_SEC) -> P
         end_s = _reach_within(state, tid, horizon_sec, route.length_m)
         paths[tid] = route.path.slice(st.s, end_s)
 
-    return Prediction(horizon_sec, conflicts, plans, paths)
+    queued = queue_rollout(state, free_plans, horizon_sec)
+    return Prediction(
+        horizon_sec, conflicts, queued.plans, paths,
+        free_plans=free_plans, queue_delay_sec=queued.queue_delay_sec)
+
+
+def _evidence(state: AnalyticState, resource_id: str,
+              train_a: str, train_b: str) -> dict:
+    trains = [state.trains.get(tid) for tid in (train_a, train_b) if tid]
+    sources = {st.data_source for st in trains if st is not None}
+    if "SYNTHETIC_FREIGHT" in sources:
+        evidence = "HYBRID_PREDICTION"
+    elif sources and sources <= {"RAILRADAR_LIVE"}:
+        evidence = "LIVE_ASSIMILATED_PREDICTION"
+    elif "RAILRADAR_REPLAY" in sources:
+        evidence = "REPLAY_PREDICTION"
+    else:
+        evidence = "PREDICTED"
+    confidence_by_source = {
+        "RAILRADAR_LIVE": 0.85,
+        "RAILRADAR_REPLAY": 0.6,
+        "SYNTHETIC_FREIGHT": 0.7,
+        "TIMETABLE_ESTIMATE": 0.45,
+    }
+    confidence = min(
+        (confidence_by_source.get(source, 0.45) for source in sources),
+        default=0.45)
+    pair = sorted(tid for tid in (train_a, train_b) if tid)
+    episode = f"EP-{resource_id}-{'-'.join(pair) if pair else 'NA'}"
+    return {"episode_id": episode, "evidence": evidence,
+            "confidence": confidence}
 
 
 def _reach_within(state: AnalyticState, tid: str, horizon: float, max_s: float) -> float:

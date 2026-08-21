@@ -8,19 +8,20 @@ import { Btn } from "./primitives";
  * already expresses everything they did, continuously.
  */
 export function Timeline() {
-  const { horizonOffset, setHorizonOffset, playing, setPlaying, speed, setSpeed, conflicts } =
+  const { bundle, horizonOffset, setHorizonOffset, playing, setPlaying, speed, setSpeed, conflicts } =
     useTwin();
+  const live = bundle?.clockMode === "LIVE";
 
   const within = conflicts.filter((c) => c.etaSec <= 900);
 
   return (
     <div className="shrink-0 bg-shell">
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-1.5">
-        <Btn onClick={() => setPlaying(!playing)} variant={playing ? "default" : "primary"}>
+        <Btn disabled={live} onClick={() => setPlaying(!playing)} variant={playing ? "default" : "primary"}>
           {playing ? "Pause" : "Run"}
         </Btn>
         {([1, 2, 5, 10] as SimSpeed[]).map((s) => (
-          <Btn key={s} active={speed === s} onClick={() => setSpeed(s)}>
+          <Btn key={s} disabled={live} active={speed === s} onClick={() => setSpeed(s)}>
             {s}×
           </Btn>
         ))}

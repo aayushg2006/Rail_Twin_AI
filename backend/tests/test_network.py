@@ -12,7 +12,7 @@ import pytest
 from app.network.chainage import Leg, Position, path_of
 from app.network.net import (MODELLED_REACH_M, STATION_LIMIT_M, corridors,
                              lines, platforms, resources)
-from app.network.routes import build_route
+from app.network.routes import alternate_platforms, build_route
 
 
 # --------------------------------------------------------------- real distances
@@ -61,13 +61,27 @@ def test_the_real_track_geometry_is_carried_for_the_map():
     geo = network_pack.get("geo") or {}
     assert geo.get("available") is True, "run tools/ingest/fetch_osm.py"
     assert "OpenStreetMap" in geo["licence"]
-    assert len(geo["ways"]) > 30
-    assert len(geo["switches"]) >= 6, "the six real turnouts"
+    assert len(geo["ways"]) == 39
+    assert len(geo["switches"]) == 6, "the six real turnouts"
+    assert len(geo["platforms"]) == 3, "OSM groups 2;3, 4;5 and 6;7"
     assert len(geo["signals"]) >= 5
     # Every way carries both real coordinates and local metres.
     for way in geo["ways"][:5]:
         assert way["points"] and way["local"]
         assert -1.0 < way["points"][0]["lat"] - 19.38 < 1.0
+
+
+def test_operational_lines_are_mapped_to_the_shared_osm_topology():
+    from app.api.routes_sim import _physical_topology
+    topology, mapping = _physical_topology()
+    assert {edge["lineId"] for edge in topology["edges"]} == {
+        "SLD", "SLU", "FSD", "FSU", "THD", "THU", "BRD", "BRU", "GDC", "GYL"
+    }
+    assert mapping["THU"] and mapping["BRD"] and mapping["BRU"]
+    assert set(mapping["THU"]).isdisjoint(mapping["BRD"])
+    by_line = {edge["lineId"]: edge for edge in topology["edges"]}
+    assert "PF6" in by_line["THU"]["via"] and "PF6" in by_line["BRD"]["via"]
+    assert "PF7" in by_line["BRU"]["via"]
 
 
 def test_station_limits_are_plausible_for_a_junction():
@@ -111,6 +125,19 @@ def test_branch_service_works_over_the_branch_turnout():
     used = {u.resource_id for u in route.uses}
     assert "J-B" in used, "a Diva-bound movement must take the branch turnout"
     assert "PF6" in used
+
+
+def test_pf6_pf7_have_directionally_distinct_diva_connections():
+    outbound = build_route("OUT", "NORTH", "DIVA", "SUBURBAN", "PF6", 45)
+    inbound = build_route("IN", "DIVA", "NORTH", "SUBURBAN", "PF7", 45)
+    assert outbound.leg_lines[-1] == "BRD"
+    assert outbound.platform_id == "PF6"
+    assert inbound.leg_lines[0] == "BRU"
+    assert inbound.platform_id == "PF7"
+    assert "J-B" in {use.resource_id for use in outbound.uses}
+    assert "J-B" in {use.resource_id for use in inbound.uses}
+    assert alternate_platforms(outbound) == []
+    assert alternate_platforms(inbound) == []
 
 
 def test_freight_to_the_branch_uses_the_goods_chord_not_a_platform():

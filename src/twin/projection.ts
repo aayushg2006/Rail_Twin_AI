@@ -108,19 +108,21 @@ export function createProjector(network: RailNetwork): Projector {
   const corridorReach = (corridor: string): number =>
     network.corridors[corridor]?.reachM ?? network.modelledReachM;
 
-  function branchPoint(m: number): ScreenPoint {
-    // The branch leaves the throat at the turnout and falls away to the
-    // bottom-left, so the crossing movements are visibly separated rather than
-    // all converging on one dot.
+  function branchPoint(m: number, lineId: "BRD" | "BRU" = "BRD"): ScreenPoint {
+    // PF6 is the Diva-bound face and PF7 is the Vasai-bound face. Keep those
+    // connections separate through the six-switch south throat, then carry the
+    // two branch roads side-by-side toward Diva.
     const reach = corridorReach("DIVA");
+    const startY = lineId === "BRD" ? PLATFORM_Y.PF6 : PLATFORM_Y.PF7;
+    const throatY = LINE_Y.BRD + (lineId === "BRU" ? -18 : 18);
     if (m <= BRANCH_TURNOUT_M) {
       const t = clamp(m / BRANCH_TURNOUT_M, 0, 1);
-      return { x: CX - t * 150, y: LINE_Y.BRD + t * 30 };
+      return { x: CX - t * 150, y: startY + t * (throatY - startY) };
     }
     const t = clamp((m - BRANCH_TURNOUT_M) / Math.max(1, reach - BRANCH_TURNOUT_M), 0, 1);
     return {
       x: CX - 150 - t * (APPROACH_PX + 180),
-      y: LINE_Y.BRD + 30 + t * BRANCH_DROP_PX,
+      y: throatY + t * BRANCH_DROP_PX,
     };
   }
 
@@ -143,8 +145,8 @@ export function createProjector(network: RailNetwork): Projector {
     if (corridor === "YARD" || line === "GYL") return yardPoint(at.m);
     if (corridor === "DIVA") {
       return line === "GDC"
-        ? { x: branchPoint(at.m).x, y: branchPoint(at.m).y + 55 }
-        : branchPoint(at.m);
+        ? { x: branchPoint(at.m, "BRD").x, y: branchPoint(at.m, "BRD").y + 55 }
+        : branchPoint(at.m, line === "BRU" ? "BRU" : "BRD");
     }
     if (line === "GDC") return chordPoint(at.m);
     if (corridor === "STATION") {
@@ -160,16 +162,12 @@ export function createProjector(network: RailNetwork): Projector {
     }
     if (lineId === "BRD" || lineId === "BRU") {
       const reach = corridorReach("DIVA");
-      const offset = lineId === "BRU" ? -28 : 0;
       const steps = [0, BRANCH_TURNOUT_M, reach * 0.45, reach];
-      return steps.map((m) => {
-        const p = branchPoint(m);
-        return { x: p.x, y: p.y + offset };
-      });
+      return steps.map((m) => branchPoint(m, lineId));
     }
     if (lineId === "GDC") {
       const reach = corridorReach("NORTH");
-      const branch = branchPoint(corridorReach("DIVA"));
+      const branch = branchPoint(corridorReach("DIVA"), "BRD");
       return [
         { x: branch.x, y: branch.y + 55 },
         { x: CX, y: LINE_Y.GDC },

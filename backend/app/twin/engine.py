@@ -26,7 +26,8 @@ import simpy
 
 from ..config import settings
 from ..network.fleet import FleetEntry, active_window, fleet_by_id
-from ..network.net import STATION_LIMIT_M, lines, resources as net_resources
+from ..network.net import (STATION_LIMIT_M, corridors, lines,
+                           resources as net_resources)
 from ..network.routes import RailRoute, build_route, route_template
 from ..network.scenarios import (ScenarioSetup, TrainOverride, matches,
                                  scenario_setup)
@@ -87,7 +88,8 @@ class SimulationEngine:
     def __init__(self, scenario_id: str = "BASE", seed: int | None = None,
                  epoch_start_ms: int | None = None, clock_mode: str = "DEMO",
                  stochastic: bool = True, policy: str = "FIFO",
-                 accept_actions: bool = True):
+                 accept_actions: bool = True,
+                 admission_cutoff_sec: float | None = None):
         self.scenario_id = scenario_id
         self.seed = settings.seed if seed is None else seed
         self.rng = random.Random(self.seed)
@@ -96,6 +98,7 @@ class SimulationEngine:
         self.epoch_start_ms = epoch_start_ms or settings.demo_epoch_start_ms
 
         instant = datetime.fromtimestamp(self.epoch_start_ms / 1000, tz=ZoneInfo("Asia/Kolkata"))
+        self.service_date = instant.date().isoformat()
         # Time of day (seconds since midnight IST) at simulation time zero.
         self.service_epoch_sec = instant.hour * 3600 + instant.minute * 60 + instant.second
         self.weekday_sun0 = (instant.weekday() + 1) % 7
@@ -105,9 +108,14 @@ class SimulationEngine:
         # twin runs FIFO plus whatever the controller accepts.
         self.policy = policy
         self.accept_actions = accept_actions
+        # Relative simulation time after which new services are not admitted.
+        # Live twins leave this unset; fixed-cohort benchmarks set it to the end
+        # of the measurement window so the declared drain is a real drain.
+        self.admission_cutoff_sec = admission_cutoff_sec
         self.setup: ScenarioSetup = scenario_setup(scenario_id)
         self.env = simpy.Environment()
         self.trains: dict[str, TrainRuntime] = {}
+        self.completed_trains: dict[str, TrainRuntime] = {}
         self.routes: dict[str, RailRoute] = {}
         self.procs: dict[str, simpy.Process] = {}
         self.resources: dict[str, ManagedResource] = build_resources(
@@ -117,12 +125,15 @@ class SimulationEngine:
         self.unavailable_routes: set[str] = set(self.setup.unavailable_routes)
         self.headway_multiplier: float = self.setup.headway_multiplier
         self.applied_actions: list[AppliedAction] = []
+        self.applied_action_ids: set[str] = set()
         self.causal_links: list[CausalLink] = []
         self.events: list[DelayEvent] = []
         # Live observations (train number -> lateness seconds) fed by ingestion.
         self.observed_delay_sec: dict[str, float] = {}
         self.observed_speed_kmh: dict[str, float] = {}
         self.observed_platform: dict[str, str] = {}
+        self.observed_source: dict[str, str] = {}
+        self.observed_at_epoch: dict[str, float] = {}
 
         self._resolve_dynamic_overrides()
         self._resolve_block_selector()
@@ -193,6 +204,9 @@ class SimulationEngine:
         for f in window:
             if f.id in self.trains:
                 continue
+            if (self.admission_cutoff_sec is not None
+                    and f.entry_sec - self.service_epoch_sec >= self.admission_cutoff_sec):
+                continue
             self._create(f)
             created = True
         if created:
@@ -248,6 +262,7 @@ class SimulationEngine:
         cutoff = self.service_seconds - WINDOW_BEFORE_SEC - 600
         for tid in [t for t, rt in self.trains.items()
                     if rt.finished and (rt.booked_dep_sec < cutoff)]:
+            self.completed_trains[tid] = self.trains[tid]
             self.trains.pop(tid, None)
             self.routes.pop(tid, None)
             self.procs.pop(tid, None)
@@ -347,13 +362,19 @@ class SimulationEngine:
         if not self.stochastic:
             return 0.0
         # Lognormal-ish: most services near time, a long thin tail of late ones.
-        rng = random.Random(f"{self.seed}:{f.id}")
+        seed_key = (f"{self.seed}:{self.service_date}:{f.id}"
+                    if f.is_freight else f"{self.seed}:{f.id}")
+        rng = random.Random(seed_key)
         if rng.random() < 0.62:
             return 0.0
         return round(min(1800.0, rng.lognormvariate(4.6, 0.85)), 1)
 
     # ------------------------------------------------------------ dynamics
     def _limit_ms(self, rt: TrainRuntime, s: float) -> float:
+        if rt.regulated_until_sec is not None and self.env.now >= rt.regulated_until_sec:
+            rt.regulated_kmh = None
+            rt.regulated_until_sec = None
+            rt.regulation_expires_after_resource_id = None
         route = self.routes[rt.train_id]
         line = lines.get(route.line_at(s))
         limit = min(rt.line_speed_kmh, line.speed_limit_kmh if line else rt.line_speed_kmh)
@@ -508,13 +529,19 @@ class SimulationEngine:
                 yield env.timeout(rt.entry_at_sec - env.now)
             except simpy.Interrupt:
                 continue
+        # A plan may have re-platformed this service while it was still in the
+        # admission wait.  That interrupt is consumed by the loop above, so the
+        # process must explicitly refresh its local route before taking the
+        # first resource.  Otherwise it continues over the withdrawn face even
+        # though snapshots and predictions show the replacement route.
+        route = self.routes[tid]
         rt.admitted = True
         rt.status = TrainStatus.APPROACHING
 
         while rt.next_use_index < len(route.uses):
             try:
                 use = route.uses[rt.next_use_index]
-                yield from self._consume_hold(rt)
+                yield from self._consume_hold(rt, use.resource_id)
                 is_platform = use.resource_id == route.platform_id
                 v_exit = 0.0 if is_platform else self._limit_ms(rt, use.enter_s)
                 if use.enter_s > rt.s + EPS:
@@ -533,17 +560,28 @@ class SimulationEngine:
         except simpy.Interrupt:
             pass
         rt.finished = True
+        rt.actual_exit_sec = self.service_epoch_sec + env.now
         rt.status = TrainStatus.COMPLETED
         rt.profile = None
         rt.speed_ms = 0.0
 
-    def _consume_hold(self, rt: TrainRuntime):
-        if rt.pending_hold_sec <= 0:
+    def _consume_hold(self, rt: TrainRuntime, resource_id: str):
+        if (rt.controller_hold_resource_id is not None
+                and rt.controller_hold_resource_id != resource_id):
+            return
+        absolute = max(0.0, rt.controller_hold_until_sec - self.env.now)
+        hold = absolute if rt.controller_hold_until_sec > 0 else rt.pending_hold_sec
+        if hold <= 0:
+            if rt.controller_hold_until_sec > 0:
+                rt.pending_hold_sec = 0.0
+                rt.controller_hold_until_sec = 0.0
+                rt.controller_hold_resource_id = None
             return
         env = self.env
-        hold = rt.pending_hold_sec
         event_part = min(hold, rt.pending_event_hold)
         rt.pending_hold_sec = 0.0
+        rt.controller_hold_until_sec = 0.0
+        rt.controller_hold_resource_id = None
         rt.pending_event_hold = max(0.0, rt.pending_event_hold - event_part)
         rt.status = TrainStatus.HELD
         rt.speed_ms = 0.0
@@ -563,38 +601,59 @@ class SimulationEngine:
         bucket = RESOURCE_WAIT_BUCKET.get(spec.kind, "block_wait")
 
         req = mr.request(priority=rt.priority)
-        rt.status = TrainStatus.ARRIVING if is_platform else TrainStatus.WAITING
-        yield req
-        waited = 0.0
-        while mr.blocked:
-            rt.status = TrainStatus.WAITING
-            rt.wait_end_t = None
-            rt.speed_ms = 0.0
-            yield env.timeout(2.0)
-            waited += 2.0
-        gate = mr.gate_wait(env.now)
-        if gate > 0:
-            rt.status = TrainStatus.WAITING
-            rt.wait_end_t = env.now + gate
-            rt.speed_ms = 0.0
-            rt.profile = None
-            prev = mr.snapshot_occupant(env.now) or (
-                mr.occupancy[-1].train_id if mr.occupancy else "")
-            yield env.timeout(gate)
-            waited += gate
-            self._causal(f"{spec.kind}_OCCUPANCY", prev or use.resource_id,
-                         rt.train_id, use.resource_id, gate)
-        if waited > 0:
-            rt.delays.add(bucket, waited)
+        granted = False
+        rec = None
+        rt.queued_resource_id = use.resource_id
+        try:
+            rt.status = TrainStatus.ARRIVING if is_platform else TrainStatus.WAITING
+            yield req
+            granted = True
+            rt.queued_resource_id = None
+            waited = 0.0
+            while mr.blocked:
+                rt.status = TrainStatus.WAITING
+                rt.wait_end_t = None
+                rt.speed_ms = 0.0
+                yield env.timeout(2.0)
+                waited += 2.0
+            gate = mr.gate_wait(env.now)
+            if gate > 0:
+                rt.status = TrainStatus.WAITING
+                rt.wait_end_t = env.now + gate
+                rt.speed_ms = 0.0
+                rt.profile = None
+                prev = mr.snapshot_occupant(env.now) or (
+                    mr.occupancy[-1].train_id if mr.occupancy else "")
+                yield env.timeout(gate)
+                waited += gate
+                self._causal(f"{spec.kind}_OCCUPANCY", prev or use.resource_id,
+                             rt.train_id, use.resource_id, gate)
+            if waited > 0:
+                rt.delays.add(bucket, waited)
 
-        rec = mr.on_enter(rt.train_id, env.now)
-        if is_platform:
-            yield from self._dwell(rt, route)
-        else:
-            rt.status = TrainStatus.RUNNING
-            yield from self._travel(rt, use.exit_s, self._limit_ms(rt, use.exit_s))
-        mr.on_exit(rec, env.now)
-        mr.res.release(req)
+            rec = mr.on_enter(rt.train_id, env.now)
+            rt.current_resource_id = use.resource_id
+            if is_platform:
+                yield from self._dwell(rt, route)
+            else:
+                rt.status = TrainStatus.RUNNING
+                yield from self._travel(rt, use.exit_s, self._limit_ms(rt, use.exit_s))
+        finally:
+            # SimPy does not automatically release a granted Resource request
+            # when its process is interrupted.  Every exit path, including a
+            # controller re-plan, must close occupancy and return the lease.
+            rt.queued_resource_id = None
+            rt.current_resource_id = None
+            if rec is not None and rec.exit is None:
+                mr.on_exit(rec, env.now)
+            if granted:
+                mr.res.release(req)
+            else:
+                req.cancel()
+            if rt.regulation_expires_after_resource_id == use.resource_id:
+                rt.regulated_kmh = None
+                rt.regulated_until_sec = None
+                rt.regulation_expires_after_resource_id = None
 
     def _dwell(self, rt: TrainRuntime, route: RailRoute):
         env = self.env
@@ -605,7 +664,10 @@ class SimulationEngine:
         if self.stochastic:
             # Real dwell overruns are one-sided: boarding can take longer than
             # booked, essentially never less.
-            dwell = booked + max(0.0, self.rng.gauss(booked * 0.12, booked * 0.28))
+            dwell_rng = random.Random(
+                f"{self.seed}:{rt.train_id}:dwell:{rt.next_stop_index}")
+            dwell = booked + max(
+                0.0, dwell_rng.gauss(booked * 0.12, booked * 0.28))
         rt.status = TrainStatus.DWELLING
         rt.speed_ms = 0.0
         rt.profile = None
@@ -645,28 +707,53 @@ class SimulationEngine:
             self.advance(min(step, target_sim_time - self.env.now))
 
     # ----------------------------------------------------------- actions
-    def apply_action(self, action: AppliedAction) -> None:
+    def apply_action(self, action: AppliedAction) -> bool:
         # A shadow twin ignores controller actions by construction - that is
         # exactly what makes it a counterfactual.
         if not self.accept_actions:
-            return
+            return False
+        if action.action_id and action.action_id in self.applied_action_ids:
+            return False
         rt = self.trains.get(action.train_id)
         if rt is None or rt.finished:
-            return
+            return False
+        if action.kind in {"HOLD", "PLATFORM_REASSIGNMENT", "ALTERNATE_ROUTE"}:
+            if rt.current_resource_id is not None or rt.queued_resource_id is not None:
+                return False
+        applied = False
         if action.kind == "SPEED_REGULATION" and action.speed_kmh:
             rt.regulated_kmh = max(5.0, float(action.speed_kmh))
-            self._interrupt(action.train_id)
+            rt.regulated_until_sec = action.expires_at_sec
+            rt.regulation_expires_after_resource_id = action.expires_after_resource_id
+            applied = True
         elif action.kind == "HOLD" and action.hold_sec:
-            rt.pending_hold_sec += float(action.hold_sec)
-            self._interrupt(action.train_id)
+            route = self.routes.get(rt.train_id)
+            target = action.effective_resource_id
+            if target and (route is None or not any(
+                    use.resource_id == target
+                    for use in route.uses[rt.next_use_index:])):
+                return False
+            release = (float(action.release_at_sec)
+                       if action.release_at_sec is not None
+                       else self.env.now + float(action.hold_sec))
+            rt.controller_hold_until_sec = max(rt.controller_hold_until_sec, release)
+            rt.pending_hold_sec = max(rt.pending_hold_sec, float(action.hold_sec))
+            rt.controller_hold_resource_id = target
+            applied = True
         elif action.kind == "PLATFORM_REASSIGNMENT" and action.platform_id:
-            self._reassign(rt, platform_id=action.platform_id)
+            applied = self._reassign(rt, platform_id=action.platform_id)
         elif action.kind == "ALTERNATE_ROUTE" and action.route_id:
-            self._reassign(rt, line_hint=action.route_id)
+            applied = self._reassign(rt, line_hint=action.route_id)
+        if not applied:
+            return False
+        action.lifecycle = "ACTIVE"
         self.applied_actions.append(action)
+        if action.action_id:
+            self.applied_action_ids.add(action.action_id)
+        return True
 
     def _reassign(self, rt: TrainRuntime, platform_id: str | None = None,
-                  line_hint: str | None = None) -> None:
+                  line_hint: str | None = None) -> bool:
         """Re-route a train that has not yet reached the station throat.
 
         Chainage makes this safe: the new route is the same physical geometry
@@ -676,13 +763,20 @@ class SimulationEngine:
         """
         f = fleet_by_id[rt.train_id]
         current = self.routes[rt.train_id]
-        if rt.s > current.stops[0].s if current.stops else False:
-            return  # already past the platform; nothing to reassign
+        stop_s = current.stops[0].s if current.stops else None
+        approach_turnouts = [
+            use.enter_s for use in current.uses
+            if (net_resources[use.resource_id].kind == "JUNCTION"
+                and (stop_s is None or use.enter_s < stop_s))
+        ]
+        safe_control_s = max(approach_turnouts) if approach_turnouts else stop_s
+        if safe_control_s is not None and rt.s >= safe_control_s - EPS:
+            return False  # the approach route is already locked through the throat
         new_route = route_template(f.arrival_corridor, f.departure_corridor,
                                    f.service_class,
                                    platform_id or current.platform_id, f.dwell_sec)
         if new_route.id == current.id:
-            return
+            return False
         self.routes[rt.train_id] = new_route
         rt.route_id = new_route.id
         # Position is chainage, so it is unchanged; only the resource list ahead
@@ -690,6 +784,7 @@ class SimulationEngine:
         rt.next_use_index = next(
             (i for i, u in enumerate(new_route.uses) if u.enter_s > rt.s), len(new_route.uses))
         self._interrupt(rt.train_id)
+        return True
 
     def set_headway_multiplier(self, multiplier: float) -> None:
         value = max(0.5, min(4.0, float(multiplier)))
@@ -703,6 +798,10 @@ class SimulationEngine:
             self.resources[resource_id].blocked = False
 
     def _interrupt(self, tid: str) -> None:
+        rt = self.trains.get(tid)
+        if rt is not None and rt.profile is not None:
+            rt.s, rt.speed_ms = rt.sample(self.env.now)
+            rt.profile = None
         proc = self.procs.get(tid)
         if proc is not None and proc.is_alive:
             try:
@@ -735,13 +834,59 @@ class SimulationEngine:
                 if route is not None and route.platform_id != face:
                     self._reassign(rt, platform_id=face)
 
+    def observe_location(self, number: str, station_code: str) -> None:
+        """Anchor an admitted train to a detailed RailRadar station report."""
+        code = station_code.strip().upper()
+        candidates = [(corridor_id, chainage)
+                      for corridor_id, corridor in corridors.items()
+                      for station, _name, chainage in corridor.stations
+                      if station.upper() == code]
+        if code == "BSR":
+            candidates.extend((corridor_id, 0.0) for corridor_id in corridors)
+        if not candidates:
+            return
+        for tid, rt in self.trains.items():
+            entry = fleet_by_id.get(tid)
+            route = self.routes.get(tid)
+            if (entry is None or entry.number != number or route is None
+                    or rt.finished or not rt.admitted
+                    or rt.current_resource_id or rt.queued_resource_id):
+                continue
+            positions = [route.path.s_at(corridor_id, chainage)
+                         for corridor_id, chainage in candidates]
+            positions = [position for position in positions if position is not None]
+            if not positions:
+                continue
+            here = rt.sample_s(self.env.now)
+            anchored = min(positions, key=lambda position: abs(position - here))
+            self._interrupt(tid)
+            rt.s = max(0.0, min(route.length_m, anchored))
+            rt.next_use_index = next(
+                (index for index, use in enumerate(route.uses)
+                 if use.exit_s > rt.s + EPS), len(route.uses))
+
     def observe(self, number: str, lateness_sec: float) -> None:
         """Record a live lateness observation for a train number."""
         self.observed_delay_sec[number] = lateness_sec
         for rt in self.trains.values():
             f = fleet_by_id.get(rt.train_id)
-            if f and f.number == number and not rt.admitted:
-                rt.delays.entry = max(0.0, lateness_sec)
+            if f and f.number == number and not rt.finished:
+                # Live observations are anchors, not merely initial conditions.
+                # Correct the remaining entry-delay bucket for an admitted
+                # service without erasing delay already attributed to queues,
+                # dwell, events or controller actions.
+                other = rt.delays.total - rt.delays.entry
+                rt.delays.entry = max(0.0, lateness_sec - other)
+
+    def observe_metadata(self, number: str, source: str,
+                         observed_at: str | None = None) -> None:
+        self.observed_source[number] = source
+        if observed_at:
+            try:
+                self.observed_at_epoch[number] = datetime.fromisoformat(
+                    observed_at.replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                pass
 
     def inject_event(self, event: DelayEvent) -> None:
         event.timestamp = self.env.now
@@ -767,13 +912,15 @@ class SimulationEngine:
 
     # ----------------------------------------------------- analytic view
     def analytic_state(self) -> "AnalyticState":
-        from .predict import AnalyticState, AnalyticTrain
+        from .predict import AnalyticResource, AnalyticState, AnalyticTrain
         now = self.env.now
         trains: dict[str, AnalyticTrain] = {}
         for tid, rt in self.trains.items():
             if rt.finished:
                 continue
             s, speed = rt.sample(now)
+            entry = fleet_by_id.get(tid)
+            number = entry.number if entry else tid
             trains[tid] = AnalyticTrain(
                 train_id=tid, route_id=rt.route_id, s=s, speed_ms=speed,
                 line_speed_kmh=rt.line_speed_kmh, regulated_kmh=rt.regulated_kmh,
@@ -784,12 +931,36 @@ class SimulationEngine:
                 # yet - it bites when the train next reaches a signal. The
                 # projection must still account for it, or an accepted decision
                 # looks as though it changed nothing.
-                hold_remaining=rt.hold_remaining(now) + rt.pending_hold_sec,
+                hold_remaining=rt.hold_remaining(now),
                 finished=rt.finished, admitted=rt.admitted, priority=rt.priority,
                 category=rt.category, service_class=rt.service_class,
                 booked_dep_sec=rt.booked_dep_sec, entry_at_sec=rt.entry_at_sec,
                 departed_platform=rt.departed_platform,
                 source=rt.source, provenance=rt.provenance,
+                current_resource_id=rt.current_resource_id,
+                queued_resource_id=rt.queued_resource_id,
+                scheduled_hold_sec=rt.pending_hold_sec,
+                scheduled_hold_resource_id=rt.controller_hold_resource_id,
+                scheduled_release_at_sec=(rt.controller_hold_until_sec
+                                          if rt.controller_hold_until_sec > 0 else None),
+                data_source=(
+                    "SYNTHETIC_FREIGHT" if rt.category in ("FREIGHT", "SHUNT")
+                    else ("RAILRADAR_REPLAY" if self.observed_source.get(
+                        number, "") in ("replay", "cache")
+                          else "RAILRADAR_LIVE" if number
+                          in self.observed_source else "TIMETABLE_ESTIMATE")),
+                observed_at_epoch=self.observed_at_epoch.get(number),
+            )
+        resource_state = {}
+        for rid, mr in self.resources.items():
+            queued = tuple(
+                tid for tid, rt in self.trains.items()
+                if rt.queued_resource_id == rid and not rt.finished)
+            resource_state[rid] = AnalyticResource(
+                resource_id=rid,
+                free_at_sec=max(0.0, mr.free_at - now),
+                owner=mr.snapshot_occupant(now), queued=queued,
+                blocked=mr.blocked,
             )
         return AnalyticState(
             sim_time=now, service_epoch_sec=self.service_epoch_sec, trains=trains,
@@ -797,4 +968,5 @@ class SimulationEngine:
             blocked_resources=set(self.blocked_resources),
             headway_multiplier=self.headway_multiplier,
             unavailable_routes=set(self.unavailable_routes),
+            resources=resource_state,
         )

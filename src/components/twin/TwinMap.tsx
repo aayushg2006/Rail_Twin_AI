@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Conflict, ScreenPoint, TrainSnapshot } from "@/domain/types";
 import { useTwin } from "@/twin/store";
 import {
@@ -13,6 +13,7 @@ import {
 } from "@/twin/projection";
 import { GEO_WAY_STYLE, type GeoProjector } from "@/twin/geoprojection";
 import { mmss } from "@/twin/format";
+import { GeoMap } from "./GeoMap";
 
 const MIN_ZOOM = 0.7;
 const MAX_ZOOM = 8;
@@ -169,6 +170,37 @@ export function TwinMap() {
     return map;
   }, [bundle]);
 
+  // Reframe only when the focused episode changes. Bundle refreshes must not
+  // steal a controller's manual pan/zoom while they inspect the same episode.
+  useEffect(() => {
+    if (!focusMode || !selectedConflict || !projector || !bundle) return;
+    const points: ScreenPoint[] = [];
+    for (const id of [selectedConflict.trainA, selectedConflict.trainB]) {
+      const train = bundle.simState.trains[id];
+      if (train?.at) points.push(projector.point(train.at, train.line));
+      for (const at of bundle.prediction.paths[id] ?? []) {
+        points.push(projector.point(at, train?.line ?? null));
+      }
+    }
+    points.push(projector.point(
+      selectedConflict.at,
+      bundle.simState.trains[selectedConflict.trainA]?.line ?? null,
+    ));
+    if (!points.length) return;
+    const minX = Math.min(...points.map((point) => point.x));
+    const maxX = Math.max(...points.map((point) => point.x));
+    const minY = Math.min(...points.map((point) => point.y));
+    const maxY = Math.max(...points.map((point) => point.y));
+    const nextZoom = Math.min(4.5, Math.max(1,
+      Math.min(base.w / Math.max(280, maxX - minX + 180),
+        base.h / Math.max(180, maxY - minY + 140))));
+    setZoom(nextZoom);
+    setPan({
+      x: (minX + maxX) / 2 - (base.x + base.w / 2),
+      y: (minY + maxY) / 2 - (base.y + base.h / 2),
+    });
+  }, [focusMode, selectedConflict?.id, projector, base]);
+
   if (!projector || !bundle) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-map">
@@ -176,6 +208,8 @@ export function TwinMap() {
       </div>
     );
   }
+
+  if (geographic) return <GeoMap />;
 
   // Both projectors satisfy the same interface, so the movement layers are
   // written once and drawn against whichever view is active.
@@ -212,10 +246,15 @@ export function TwinMap() {
           <GeoInfrastructure projector={geoProjector} show={layers.infrastructure} />
         ) : (
           <>
-            {layers.infrastructure && <StationEnvelope projector={projector} />}
+            {layers.infrastructure && (
+              <g opacity={focusIds ? 0.28 : 1}>
+                <StationEnvelope projector={projector} />
+                <Platforms projector={projector} />
+                <CorridorLabels projector={projector} />
+              </g>
+            )}
             <Lines projector={projector} focused={!!focusIds} selection={selection} select={select} />
-            {layers.infrastructure && <Platforms projector={projector} />}
-            {layers.infrastructure && <CorridorLabels projector={projector} />}
+            <SchematicTurnouts projector={projector} focused={!!focusIds} />
           </>
         )}
 
@@ -228,6 +267,7 @@ export function TwinMap() {
             projector={active}
             conflicts={conflicts}
             selectedId={selectedConflict?.id ?? null}
+            focused={focusMode}
             onSelect={selectConflict}
           />
         )}
@@ -509,7 +549,7 @@ function Lines({
             />
             <text
               x={(path[path.length - 1]?.x ?? 0) - 6}
-              y={lineY(line.id) - 8}
+              y={(path[path.length - 1]?.y ?? lineY(line.id)) - 8}
               textAnchor="end"
               fontSize={9}
               fontFamily="var(--font-cond)"
@@ -521,6 +561,36 @@ function Lines({
           </g>
         );
       })}
+    </g>
+  );
+}
+
+function SchematicTurnouts({ projector, focused }: { projector: Projector; focused: boolean }) {
+  const north = projector.resourceSpan("J-N", "THU");
+  const south = projector.resourceSpan("J-S", "THU");
+  const branch = projector.resourceSpan("J-B", "BRD");
+  return (
+    <g opacity={focused ? 0.3 : 0.9} fill="none" stroke="var(--warning)" strokeWidth={1.25}>
+      {north && (
+        <g>
+          <path d={`M${north[0].x} ${LINE_Y.SLD} L${north[1].x} ${LINE_Y.SLU}`} />
+          <path d={`M${north[0].x + 28} ${LINE_Y.FSD} L${north[1].x + 28} ${LINE_Y.FSU}`} />
+          <path d={`M${north[0].x + 56} ${LINE_Y.THD} L${north[1].x + 56} ${LINE_Y.THU}`} />
+        </g>
+      )}
+      {south && (
+        <g>
+          <path d={`M${south[1].x} ${LINE_Y.SLD} L${south[0].x} ${LINE_Y.SLU}`} />
+          <path d={`M${south[1].x - 28} ${LINE_Y.FSD} L${south[0].x - 28} ${LINE_Y.FSU}`} />
+          <path d={`M${south[1].x - 56} ${LINE_Y.THD} L${south[0].x - 56} ${LINE_Y.THU}`} />
+        </g>
+      )}
+      {branch && (
+        <>
+          <circle cx={branch[0].x} cy={branch[0].y} r={3.5} fill="var(--warning)" />
+          <circle cx={branch[1].x} cy={branch[1].y} r={3.5} fill="var(--warning)" />
+        </>
+      )}
     </g>
   );
 }
@@ -686,11 +756,13 @@ function Conflicts({
   projector,
   conflicts,
   selectedId,
+  focused,
   onSelect,
 }: {
   projector: Projector;
   conflicts: Conflict[];
   selectedId: string | null;
+  focused: boolean;
   onSelect: (id: string) => void;
 }) {
   const { bundle } = useTwin();
@@ -704,6 +776,7 @@ function Conflicts({
         const critical = c.severity === "CRITICAL";
         const colour = critical ? "var(--critical)" : "var(--warning)";
         const active = selectedId === c.id;
+        const opacity = focused && !active ? 0.08 : 1;
         return (
           <g
             key={c.id}
@@ -713,6 +786,7 @@ function Conflicts({
               e.stopPropagation();
               onSelect(c.id);
             }}
+            opacity={opacity}
           >
             {span && (
               <polyline

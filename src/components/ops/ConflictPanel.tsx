@@ -9,9 +9,16 @@ import { Panel, PanelHead, Tag } from "./primitives";
  * PREDICTED") is gone: it restated the same fact three times in units the
  * controller has to convert, and the raw conflict id (#8) told them nothing.
  */
-export function ConflictPanel({ className }: { className?: string }) {
-  const { conflicts, selectedConflict, selectConflict } = useTwin();
+export function ConflictPanel({
+  className,
+  openWhatIfOnSelect = false,
+}: {
+  className?: string;
+  openWhatIfOnSelect?: boolean;
+}) {
+  const { conflicts, selectedConflict, selectConflict, openWhatIf, focusMode } = useTwin();
   const critical = conflicts.filter((c) => c.severity === "CRITICAL").length;
+  const visible = focusMode && selectedConflict ? [selectedConflict] : conflicts;
 
   return (
     <Panel className={className}>
@@ -30,14 +37,17 @@ export function ConflictPanel({ className }: { className?: string }) {
         </p>
       ) : (
         <ul className="min-h-0 overflow-y-auto">
-          {conflicts.map((c) => {
+          {visible.map((c) => {
             const active = selectedConflict?.id === c.id;
             const tone = c.severity === "CRITICAL" ? "critical" : "warning";
             return (
               <li key={c.id}>
                 <button
                   type="button"
-                  onClick={() => selectConflict(c.id)}
+                  aria-label={`${openWhatIfOnSelect ? "Open What-if for" : "Select"} ${c.resourceLabel}`}
+                  onClick={() =>
+                    openWhatIfOnSelect ? openWhatIf(c.id) : selectConflict(c.id)
+                  }
                   className={`w-full border-b border-border/60 px-3 py-2 text-left hover:bg-panel-raised ${
                     active ? "bg-panel-raised" : ""
                   }`}

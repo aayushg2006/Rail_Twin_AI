@@ -34,7 +34,7 @@ function DecisionScreen() {
           <WhatIfModal />
         </div>
         <div className="min-h-0 max-h-full overflow-y-scroll overscroll-contain bg-border max-lg:max-h-[42vh]">
-          <ConflictPanel />
+          <ConflictPanel openWhatIfOnSelect />
         </div>
       </div>
     </main>

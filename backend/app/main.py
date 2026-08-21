@@ -30,7 +30,8 @@ async def lifespan(app: FastAPI):
         orch.persistence_status = "POSTGRES" if app.state.audit._pool is not None else "IN_MEMORY"
         saved = await app.state.audit.load_scenario()
         if saved:
-            if saved.get("clockMode") in ("LIVE", "DEMO"):
+            if (not orch.live_locked
+                    and saved.get("clockMode") in ("LIVE", "DEMO")):
                 orch._set_clock_mode(saved["clockMode"])
             payload = saved.get("payload") or {}
             if payload.get("events"):

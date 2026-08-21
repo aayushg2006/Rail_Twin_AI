@@ -42,9 +42,26 @@ def train_state_dict(eng: SimulationEngine, rt: TrainRuntime) -> dict:
     f = fleet_by_id.get(rt.train_id)
     position = route.position_at(s) if route else None
     lateness = rt.lateness_sec(now, eng.service_epoch_sec)
+    number = f.number if f else rt.train_id
+    observed_source = eng.observed_source.get(number, "")
+    if f and f.is_freight:
+        data_source = "SYNTHETIC_FREIGHT"
+        position_quality, confidence = "SYNTHETIC", 0.7
+    elif observed_source in ("replay", "cache"):
+        data_source = "RAILRADAR_REPLAY"
+        position_quality, confidence = "ESTIMATED", 0.55
+    elif observed_source:
+        data_source = "RAILRADAR_LIVE"
+        position_quality = "OBSERVED_ANCHOR" if observed_source == "detail" else "ESTIMATED"
+        confidence = 0.9 if observed_source == "detail" else 0.68
+    else:
+        data_source = "TIMETABLE_ESTIMATE"
+        position_quality, confidence = "TIMETABLE", 0.4
+    observed_at = eng.observed_at_epoch.get(number)
+    wall_now = eng.epoch_start_ms / 1000.0 + eng.now
     return {
         "trainId": rt.train_id,
-        "number": f.number if f else rt.train_id,
+        "number": number,
         "name": f.name if f else "",
         "category": rt.category,
         "serviceClass": rt.service_class,
@@ -65,6 +82,7 @@ def train_state_dict(eng: SimulationEngine, rt: TrainRuntime) -> dict:
         # Booked-time accounting: negative lateness is genuine earliness.
         "bookedDepSec": rt.booked_dep_sec,
         "actualDepSec": round(rt.actual_dep_sec, 1) if rt.actual_dep_sec is not None else None,
+        "actualExitSec": round(rt.actual_exit_sec, 1) if rt.actual_exit_sec is not None else None,
         "latenessSec": round(lateness, 1),
         "delayBreakdown": rt.delays.as_dict(),
         "origin": f.origin if f else "",
@@ -72,6 +90,11 @@ def train_state_dict(eng: SimulationEngine, rt: TrainRuntime) -> dict:
         "arrivalCorridor": f.arrival_corridor if f else "",
         "departureCorridor": f.departure_corridor if f else "",
         "provenance": rt.provenance,
+        "dataSource": data_source,
+        "observationAgeSec": (round(max(0.0, wall_now - observed_at), 1)
+                              if observed_at is not None else None),
+        "positionQuality": position_quality,
+        "confidence": confidence,
         "admitted": rt.admitted,
         "finished": rt.finished,
     }
@@ -102,6 +125,13 @@ def conflict_dict(c: Conflict) -> dict:
         "requiredSeparationSec": round(c.required_separation_sec, 1),
         "probability": round(c.probability, 3),
         "timeToConflictSec": round(c.time_to_conflict, 1),
+        "episodeId": c.episode_id or c.id,
+        "evidence": c.evidence,
+        "confidence": round(c.confidence, 3),
+        "firstSeenSec": (round(c.first_seen_sec, 1)
+                         if c.first_seen_sec is not None else None),
+        "lastSeenSec": (round(c.last_seen_sec, 1)
+                        if c.last_seen_sec is not None else None),
     }
 
 

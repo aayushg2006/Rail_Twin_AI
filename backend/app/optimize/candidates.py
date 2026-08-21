@@ -153,4 +153,19 @@ def generate(state: AnalyticState, conflict: Conflict) -> list[Candidate]:
                 f"Re-platform {give.number} to {alternates[0].replace('PF', 'PF ')}",
                 AppliedAction("PLATFORM_REASSIGNMENT", give.id, platform_id=alternates[0]),
                 "LOW"))
+    # Stable IDs make command application idempotent across the many live
+    # frames in which the same conflict remains visible.  A speed restriction
+    # also expires as soon as the protected resource has been passed.
+    for candidate in out:
+        candidate.action.action_id = f"{conflict.id}:{candidate.id}"
+        candidate.action.effective_resource_id = conflict.resource_id
+        if candidate.action.kind == "HOLD" and candidate.action.hold_sec:
+            target_s = _resource_s(state, candidate.action.train_id, conflict.resource_id)
+            arrival = (project_arrival(state, candidate.action.train_id, target_s)
+                       if target_s is not None else None)
+            if arrival is not None:
+                candidate.action.release_at_sec = (
+                    state.sim_time + arrival + candidate.action.hold_sec)
+        if candidate.action.kind == "SPEED_REGULATION":
+            candidate.action.expires_after_resource_id = conflict.resource_id
     return out

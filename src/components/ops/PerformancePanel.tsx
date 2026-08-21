@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { KPISet, TrendPoint } from "@/domain/types";
 import { useTwin } from "@/twin/store";
 import { clockShort, countdown, minutes } from "@/twin/format";
@@ -23,6 +23,19 @@ export function PerformancePanel({ className }: { className?: string }) {
   const baselines = bundle?.baselines;
   const trend = bundle?.trend ?? [];
   const plan = bundle?.globalPlan;
+  const [benchmark, setBenchmark] = useState<BenchmarkReport | null>(null);
+
+  useEffect(() => {
+    const host = typeof window === "undefined" ? "localhost" : window.location.hostname;
+    const env = (import.meta as { env?: Record<string, string> }).env ?? {};
+    const ws = env["VITE_BACKEND_WS_URL"] ?? `ws://${host}:8000/ws`;
+    const http = ws.replace(/^ws/, "http").replace(/\/ws$/, "");
+    fetch(`${http}/api/benchmark/latest`)
+      .then((response) => response.json())
+      .then((report: BenchmarkReport) => setBenchmark(report))
+      .catch(() => setBenchmark({ status: "NOT_VALIDATED", validated: false,
+        reason: "Benchmark service is unavailable." }));
+  }, []);
 
   if (!bundle || !baselines) {
     return (
@@ -50,6 +63,8 @@ export function PerformancePanel({ className }: { className?: string }) {
           ) : null
         }
       />
+
+      <BenchmarkSummary report={benchmark} />
 
       <div className="grid grid-cols-2 gap-4 border-b border-border px-3 py-3 sm:grid-cols-4">
         <Metric label="Decisions applied" value={String(avoided?.decisionsApplied ?? 0)} />
@@ -84,6 +99,80 @@ export function PerformancePanel({ className }: { className?: string }) {
           : ""} {savedVsRule >= 0 ? "" : "A negative figure against the priority rule means the rigid rule happened to do better in this window — it is reported as measured."}
       </p>
     </Panel>
+  );
+}
+
+interface BenchmarkSide {
+  totalDelayMinutes: number;
+  averageDelayMinutes: number;
+  conflicts: number;
+  throughputPerHour: number;
+  platformUtilisationPercent: number;
+}
+
+interface BenchmarkReport {
+  status: string;
+  validated: boolean;
+  reason?: string;
+  aggregate?: {
+    runs: number;
+    ai: BenchmarkSide;
+    fifo: BenchmarkSide;
+    improvements: Record<string, number>;
+  };
+}
+
+function BenchmarkSummary({ report }: { report: BenchmarkReport | null }) {
+  if (!report?.aggregate) {
+    return (
+      <div className="border-b border-border px-3 py-2 text-[11px] text-muted-foreground">
+        <span className="mr-2 text-critical">NOT VALIDATED</span>
+        {report?.reason ?? "No signed 100-run release report is available yet."}
+      </div>
+    );
+  }
+  const { aggregate } = report;
+  const rows = [
+    ["Total delay", aggregate.fifo.totalDelayMinutes, aggregate.ai.totalDelayMinutes,
+      aggregate.improvements.totalDelayReductionPercent, "min"],
+    ["Conflicts", aggregate.fifo.conflicts, aggregate.ai.conflicts,
+      aggregate.improvements.conflictReductionPercent, ""],
+    ["Average delay", aggregate.fifo.averageDelayMinutes, aggregate.ai.averageDelayMinutes,
+      aggregate.improvements.averageDelayReductionPercent, "min"],
+    ["Throughput", aggregate.fifo.throughputPerHour, aggregate.ai.throughputPerHour,
+      aggregate.improvements.throughputIncreasePercent, "trains/hr"],
+    ["Platform utilisation", aggregate.fifo.platformUtilisationPercent,
+      aggregate.ai.platformUtilisationPercent,
+      aggregate.improvements.platformUtilisationIncreasePercent, "%"],
+  ] as const;
+  return (
+    <div className="border-b border-border">
+      <div className="flex items-center gap-3 bg-shell px-3 py-1.5">
+        <span className="label-xs">Signed release benchmark</span>
+        <span className="num text-[10px] text-faint">{aggregate.runs}/100 paired runs</span>
+        <span className={`ml-auto label-xs ${report.validated ? "text-ok" : "text-critical"}`}>
+          {report.validated ? "VALIDATED" : "NOT VALIDATED"}
+        </span>
+      </div>
+      <div className="grid grid-cols-[1.3fr_repeat(3,1fr)] text-[11px]">
+        {(["Metric", "FIFO", "Rail-Twin", "Measured change"] as const).map((heading) => (
+          <div key={heading} className="border-t border-r border-border px-3 py-1 label-xs">{heading}</div>
+        ))}
+        {rows.flatMap(([label, fifo, ai, improvement, unit]) => [
+          <div key={`${label}-label`} className="border-t border-r border-border px-3 py-1.5">{label}</div>,
+          <div key={`${label}-fifo`} className="num border-t border-r border-border px-3 py-1.5">
+            {fifo.toFixed(1)}{unit === "%" ? "%" : unit ? ` ${unit}` : ""}
+          </div>,
+          <div key={`${label}-ai`} className="num border-t border-r border-border px-3 py-1.5">
+            {ai.toFixed(1)}{unit === "%" ? "%" : unit ? ` ${unit}` : ""}
+          </div>,
+          <div key={`${label}-imp`} className={`num border-t border-border px-3 py-1.5 ${
+            improvement >= 0 ? "text-ok" : "text-critical"}`}>
+            {improvement >= 0 ? "+" : ""}{improvement.toFixed(1)}%
+          </div>,
+        ])}
+      </div>
+    </div>
   );
 }
 
@@ -297,6 +386,11 @@ export function DecisionLogTable({ className }: { className?: string }) {
                     <td className="num px-2 py-1.5 text-[11px]">
                       {rejected ? (
                         <span className="text-faint">not applied</span>
+                      ) : d.projectedDelaySavingSec !== undefined ? (
+                        <span className="text-ok">
+                          {minutes(d.projectedDelaySavingSec)} predicted saving
+                          {d.conflictCleared ? " · cleared" : ""}
+                        </span>
                       ) : delta === null ? (
                         <span className="text-faint">—</span>
                       ) : (

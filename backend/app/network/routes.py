@@ -212,16 +212,32 @@ def alternate_platforms(route: RailRoute) -> list[str]:
     """Other faces that could take this movement - candidates for re-platforming."""
     if route.platform_id is None:
         return []
+    # The supplied turnout graph has one directionally valid face per branch
+    # movement: PF6 feeds Diva-bound BRD and Vasai-bound BRU arrives at PF7.
+    # Sharing an UP/DOWN token with a main-line face is not a physical
+    # connection and must never create a fictional alternative.
+    if route.departure_corridor == "DIVA":
+        return [] if route.platform_id == "PF6" else ["PF6"]
+    if route.arrival_corridor == "DIVA":
+        return [] if route.platform_id == "PF7" else ["PF7"]
     out: list[str] = []
-    for line_id in route.leg_lines:
-        for pid, pf in platforms.items():
-            if pid == route.platform_id:
-                continue
-            if line_id in pf.serves:
-                out.append(pid)
-    # Same-direction faces on the same road class are also usable.
-    current = platforms[route.platform_id]
+    movement_directions = {lines[line_id].direction for line_id in route.leg_lines
+                           if line_id in lines}
+    # A different island face is not automatically compatible: PF2/PF3, for
+    # example, are opposite-direction roads.  Compatibility follows the
+    # direction of a line actually serving the candidate face; junction
+    # resources model the crossover needed to reach it.
     for pid, pf in platforms.items():
-        if pid != route.platform_id and pf.side == current.side and pid not in out:
+        if pid == route.platform_id:
+            continue
+        # A 600 m express road cannot be reassigned to the short PF1/PF2/PF3
+        # group.  The current face length is the best available consist-length
+        # proxy in the timetable data.
+        if (platforms[route.platform_id].length_m >= 500
+                and pf.length_m < 500):
+            continue
+        candidate_directions = {lines[line_id].direction for line_id in pf.serves
+                                if line_id in lines}
+        if movement_directions & candidate_directions:
             out.append(pid)
     return out

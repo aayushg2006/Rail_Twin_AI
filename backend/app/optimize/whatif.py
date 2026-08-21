@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from ..config import settings
 from ..network.fleet import fleet_by_id
 from ..twin.predict import (AnalyticState, Conflict, apply_action, predict,
-                            project_finish)
+                            project_finish_free, queue_rollout)
 from ..twin.state import AppliedAction
 from .candidates import Candidate
 from .safety import validate
@@ -49,6 +49,11 @@ class OptionEval:
     # Absolute count of CRITICAL conflicts left on the network after this
     # action, kept so `residual_conflicts` can be expressed as a delta.
     critical_conflicts: int = 0
+    # Queue-aware no-command comparison for this exact frame.  Exposing the
+    # saving lets the console report the useful result rather than an
+    # ambiguous absolute queue-delay figure.
+    reference_network_delay_sec: float = 0.0
+    network_delay_saving_sec: float = 0.0
 
     def as_dict(self) -> dict:
         return {
@@ -57,6 +62,8 @@ class OptionEval:
             "conflictResolved": self.conflict_resolved,
             "addedDelaySec": {k: round(v, 1) for k, v in self.added_delay_sec.items()},
             "networkDelaySec": round(self.network_delay_sec, 1),
+            "referenceNetworkDelaySec": round(self.reference_network_delay_sec, 1),
+            "networkDelaySavingSec": round(self.network_delay_saving_sec, 1),
             "passengerDelaySec": round(self.passenger_delay_sec, 1),
             "freightDelaySec": round(self.freight_delay_sec, 1),
             "passengerMinutes": round(self.passenger_minutes, 1),
@@ -74,51 +81,39 @@ class OptionEval:
 
 
 def delay_profile(state: AnalyticState) -> dict[str, float]:
-    """Projected finish time per train - the baseline a candidate is measured against."""
+    """Conflict-free finish profile used as the common comparison datum."""
     out: dict[str, float] = {}
     for tid, st in state.trains.items():
         if st.finished:
             continue
-        finish = project_finish(state, tid)
+        finish = project_finish_free(state, tid)
         if finish is not None:
             out[tid] = finish
     return out
 
 
 def throughput_within(state: AnalyticState, horizon: float) -> int:
-    count = 0
-    for tid, st in state.trains.items():
-        if st.finished:
-            continue
-        t = project_finish(state, tid)
-        if t is not None and t <= horizon:
-            count += 1
-    return count
+    rollout = queue_rollout(state, horizon_sec=horizon)
+    return sum(1 for t in rollout.finish_sec.values() if t <= horizon)
 
 
 def evaluate_do_nothing(base: AnalyticState, base_delays: dict[str, float],
                         conflict: Conflict, horizon: float = HORIZON) -> OptionEval:
-    """What letting the conflict happen actually costs, measured the SAME way.
+    """Literal no-command reference through the shared queue scheduler.
 
-    "Doing nothing" is not "nothing happens". Left alone, the interlocking
-    resolves the conflict itself: it holds the FOLLOWING movement at the
-    protecting signal until the resource is clear with its headway. So the
-    honest reference is that hold, evaluated through the identical projection
-    path every candidate uses - knock-on effects and all.
-
-    Modelling it as a literal no-op was wrong twice over. The projection is
-    free-running, so an unactioned conflict costs exactly zero in it, which made
-    the reference unbeatable and silenced the optimiser completely. And before
-    that, comparing a closed-form estimate against re-simulated options was
-    apples against oranges, which let the optimiser recommend actions the shadow
-    twins then measured as worse than doing nothing.
+    The protecting signal wait now emerges from resource availability and
+    propagates through every downstream queue.  No synthetic follower hold is
+    inserted, so candidates and their reference finally share one model.
     """
-    follower = conflict.train_b or conflict.train_a
-    shortfall = max(0.0, conflict.required_separation_sec - conflict.separation_sec)
     forced = Candidate(
-        "OPT-NONE", "-", "Take no action (the signal holds the second train)",
-        AppliedAction("HOLD", follower, hold_sec=shortfall), "NONE")
-    return evaluate(base, base_delays, forced, conflict, horizon, reference=None)
+        "OPT-NONE", "-", "Take no action (interlocking/FIFO)",
+        AppliedAction("NO_ACTION", conflict.train_b or conflict.train_a), "NONE")
+    result = evaluate(base, base_delays, forced, conflict, horizon, reference=None)
+    # Existing critical episodes are the reference, not a penalty charged only
+    # to FIFO. `critical_conflicts` retains their absolute count so candidates
+    # can be scored by the delta they create or remove.
+    result.residual_conflicts = 0
+    return result
 
 
 def evaluate(base: AnalyticState, base_delays: dict[str, float], cand: Candidate,
@@ -148,7 +143,8 @@ def evaluate(base: AnalyticState, base_delays: dict[str, float], cand: Candidate
     # Containment protects the movement but must not claim full resolution.
     reported_resolved = resolved if response_class == "RESOLUTION" else False
 
-    after_delays = delay_profile(after)
+    rollout = queue_rollout(after, horizon_sec=horizon)
+    after_delays = rollout.finish_sec
     added: dict[str, float] = {}
     network = passenger = freight = weighted = 0.0
     pax_minutes = tonne_minutes = 0.0
@@ -180,9 +176,11 @@ def evaluate(base: AnalyticState, base_delays: dict[str, float], cand: Candidate
                 if reference is not None else critical_after)
     thru_delta = throughput_within(after, horizon) - throughput_within(base, horizon)
 
+    reference_network = reference.network_delay_sec if reference is not None else network
     return OptionEval(
         cand.id, cand.letter, cand.title, cand.action, reported_resolved, added,
         network, passenger, freight, pax_minutes, tonne_minutes, weighted,
         thru_delta, cand.infrastructure_change,
-        validate(cand.action, after, conflict, resolved, response_class),
-        residual, True, None, response_class, critical_after)
+        validate(cand.action, after, conflict, resolved, response_class, before=base),
+        residual, True, None, response_class, critical_after,
+        reference_network, reference_network - network)

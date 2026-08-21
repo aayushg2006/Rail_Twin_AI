@@ -1,0 +1,1032 @@
+{
+  "schemaVersion": 1,
+  "description": "Frozen paired 100-run RAIL-TWIN release manifest.",
+  "generatedFrom": "timetable-bsr.json and freight-paths.json",
+  "serviceDate": "2026-08-15",
+  "timezone": "Asia/Kolkata",
+  "warmupSec": 1800,
+  "measurementSec": 3600,
+  "drainSec": 7200,
+  "dwellKey": "(seed,train,stop)",
+  "pairing": "AI and FIFO share every row, observation set, freight path and stochastic key.",
+  "windows": {
+    "peak": {
+      "measurement": "12:00-13:00 IST",
+      "epochStartMs": 1786773600000
+    },
+    "off_peak": {
+      "measurement": "10:00-11:00 IST",
+      "epochStartMs": 1786766400000
+    },
+    "freight_heavy": {
+      "measurement": "03:00-04:00 IST",
+      "epochStartMs": 1786741200000
+    },
+    "disruption": {
+      "measurement": "14:10-15:10 IST",
+      "epochStartMs": 1786781400000
+    }
+  },
+  "runs": [
+    {
+      "runId": "RT-001",
+      "scenario": "BASE",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10001,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-002",
+      "scenario": "PLATFORM_BLOCKED",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10002,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-003",
+      "scenario": "BRANCH_BLOCKED",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10003,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-004",
+      "scenario": "SIGNAL_DEGRADED",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10004,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-005",
+      "scenario": "FREIGHT_LATE",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10005,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-006",
+      "scenario": "PEAK_SURGE",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10006,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-007",
+      "scenario": "BASE",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10007,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-008",
+      "scenario": "PLATFORM_BLOCKED",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10008,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-009",
+      "scenario": "BRANCH_BLOCKED",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10009,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-010",
+      "scenario": "SIGNAL_DEGRADED",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10010,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-011",
+      "scenario": "FREIGHT_LATE",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10011,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-012",
+      "scenario": "PEAK_SURGE",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10012,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-013",
+      "scenario": "BASE",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10013,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-014",
+      "scenario": "PLATFORM_BLOCKED",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10014,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-015",
+      "scenario": "BRANCH_BLOCKED",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10015,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-016",
+      "scenario": "SIGNAL_DEGRADED",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10016,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-017",
+      "scenario": "FREIGHT_LATE",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10017,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-018",
+      "scenario": "PEAK_SURGE",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10018,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-019",
+      "scenario": "BASE",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10019,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-020",
+      "scenario": "PLATFORM_BLOCKED",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10020,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-021",
+      "scenario": "BRANCH_BLOCKED",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10021,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-022",
+      "scenario": "SIGNAL_DEGRADED",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10022,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-023",
+      "scenario": "FREIGHT_LATE",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10023,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-024",
+      "scenario": "PEAK_SURGE",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10024,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-025",
+      "scenario": "BASE",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10025,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-026",
+      "scenario": "PLATFORM_BLOCKED",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10026,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-027",
+      "scenario": "BRANCH_BLOCKED",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10027,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-028",
+      "scenario": "SIGNAL_DEGRADED",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10028,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-029",
+      "scenario": "FREIGHT_LATE",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10029,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-030",
+      "scenario": "PEAK_SURGE",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10030,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-031",
+      "scenario": "BASE",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10031,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-032",
+      "scenario": "PLATFORM_BLOCKED",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10032,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-033",
+      "scenario": "BRANCH_BLOCKED",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10033,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-034",
+      "scenario": "SIGNAL_DEGRADED",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10034,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-035",
+      "scenario": "FREIGHT_LATE",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10035,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-036",
+      "scenario": "PEAK_SURGE",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10036,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-037",
+      "scenario": "BASE",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10037,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-038",
+      "scenario": "PLATFORM_BLOCKED",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10038,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-039",
+      "scenario": "BRANCH_BLOCKED",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10039,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-040",
+      "scenario": "SIGNAL_DEGRADED",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10040,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-041",
+      "scenario": "FREIGHT_LATE",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10041,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-042",
+      "scenario": "PEAK_SURGE",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10042,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-043",
+      "scenario": "BASE",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10043,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-044",
+      "scenario": "PLATFORM_BLOCKED",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10044,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-045",
+      "scenario": "BRANCH_BLOCKED",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10045,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-046",
+      "scenario": "SIGNAL_DEGRADED",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10046,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-047",
+      "scenario": "FREIGHT_LATE",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10047,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-048",
+      "scenario": "PEAK_SURGE",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10048,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-049",
+      "scenario": "BASE",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10049,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-050",
+      "scenario": "PLATFORM_BLOCKED",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10050,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-051",
+      "scenario": "BRANCH_BLOCKED",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10051,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-052",
+      "scenario": "SIGNAL_DEGRADED",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10052,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-053",
+      "scenario": "FREIGHT_LATE",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10053,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-054",
+      "scenario": "PEAK_SURGE",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10054,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-055",
+      "scenario": "BASE",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10055,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-056",
+      "scenario": "PLATFORM_BLOCKED",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10056,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-057",
+      "scenario": "BRANCH_BLOCKED",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10057,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-058",
+      "scenario": "SIGNAL_DEGRADED",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10058,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-059",
+      "scenario": "FREIGHT_LATE",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10059,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-060",
+      "scenario": "PEAK_SURGE",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10060,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-061",
+      "scenario": "BASE",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10061,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-062",
+      "scenario": "PLATFORM_BLOCKED",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10062,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-063",
+      "scenario": "BRANCH_BLOCKED",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10063,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-064",
+      "scenario": "SIGNAL_DEGRADED",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10064,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-065",
+      "scenario": "FREIGHT_LATE",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10065,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-066",
+      "scenario": "PEAK_SURGE",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10066,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-067",
+      "scenario": "BASE",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10067,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-068",
+      "scenario": "PLATFORM_BLOCKED",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10068,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-069",
+      "scenario": "BRANCH_BLOCKED",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10069,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-070",
+      "scenario": "SIGNAL_DEGRADED",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10070,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-071",
+      "scenario": "FREIGHT_LATE",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10071,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-072",
+      "scenario": "PEAK_SURGE",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10072,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-073",
+      "scenario": "BASE",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10073,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-074",
+      "scenario": "PLATFORM_BLOCKED",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10074,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-075",
+      "scenario": "BRANCH_BLOCKED",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10075,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-076",
+      "scenario": "SIGNAL_DEGRADED",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10076,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-077",
+      "scenario": "FREIGHT_LATE",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10077,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-078",
+      "scenario": "PEAK_SURGE",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10078,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-079",
+      "scenario": "BASE",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10079,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-080",
+      "scenario": "PLATFORM_BLOCKED",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10080,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-081",
+      "scenario": "BRANCH_BLOCKED",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10081,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-082",
+      "scenario": "SIGNAL_DEGRADED",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10082,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-083",
+      "scenario": "FREIGHT_LATE",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10083,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-084",
+      "scenario": "PEAK_SURGE",
+      "windowClass": "off_peak",
+      "epochStartMs": 1786766400000,
+      "seed": 10084,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-085",
+      "scenario": "BASE",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10085,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-086",
+      "scenario": "PLATFORM_BLOCKED",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10086,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-087",
+      "scenario": "BRANCH_BLOCKED",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10087,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-088",
+      "scenario": "SIGNAL_DEGRADED",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10088,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-089",
+      "scenario": "FREIGHT_LATE",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10089,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-090",
+      "scenario": "PEAK_SURGE",
+      "windowClass": "freight_heavy",
+      "epochStartMs": 1786741200000,
+      "seed": 10090,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-091",
+      "scenario": "BASE",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10091,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-092",
+      "scenario": "PLATFORM_BLOCKED",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10092,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-093",
+      "scenario": "BRANCH_BLOCKED",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10093,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-094",
+      "scenario": "SIGNAL_DEGRADED",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10094,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-095",
+      "scenario": "FREIGHT_LATE",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10095,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-096",
+      "scenario": "PEAK_SURGE",
+      "windowClass": "disruption",
+      "epochStartMs": 1786781400000,
+      "seed": 10096,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-097",
+      "scenario": "BASE",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10097,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-098",
+      "scenario": "PLATFORM_BLOCKED",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10098,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-099",
+      "scenario": "BRANCH_BLOCKED",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10099,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    },
+    {
+      "runId": "RT-100",
+      "scenario": "SIGNAL_DEGRADED",
+      "windowClass": "peak",
+      "epochStartMs": 1786773600000,
+      "seed": 10100,
+      "incidentClearAtSec": 5400,
+      "passengerObservationSet": "FROZEN-NONE-V1",
+      "freightPathSet": "freight-paths.json"
+    }
+  ]
+}

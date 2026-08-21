@@ -44,14 +44,9 @@ def test_do_nothing_is_measured_the_same_way_as_every_option():
     base = delay_profile(state)
     ref = evaluate_do_nothing(state, base, conflict)
     assert ref.feasible
-    # "Doing nothing" is the interlocking holding the FOLLOWING movement by the
-    # separation shortfall - not a literal no-op, which would cost zero in a
-    # free-running projection and so be unbeatable.
-    assert ref.action.kind == "HOLD"
-    assert ref.action.train_id == (conflict.train_b or conflict.train_a)
-    shortfall = conflict.required_separation_sec - conflict.separation_sec
-    assert ref.action.hold_sec == pytest.approx(max(0.0, shortfall))
-    # It carries real projected consequences, not a formula.
+    # It is now a literal no-command rollout.  The protecting-signal wait is
+    # produced by the same FIFO resource queue used for every option.
+    assert ref.action.kind == "NO_ACTION"
     assert ref.network_delay_sec > 0
     assert ref.critical_conflicts >= 0
 
@@ -75,13 +70,18 @@ def test_residual_conflicts_are_relative_to_doing_nothing():
 # --------------------------------------------------- the headline property
 @pytest.mark.parametrize("scenario", SCENARIOS)
 def test_a_recommended_action_always_beats_doing_nothing(scenario):
-    eng, state, pred = _scene(scenario)
+    # At T+900 every scenario has a real, queue-feasible first action.  Keeping
+    # this fixture non-empty prevents a controller that always declines from
+    # satisfying the safety property vacuously.
+    eng, state, pred = _scene(scenario, 900.0)
     opt = OptimizationEngine()
     joint = opt.solve_joint(state, pred)
     base = delay_profile(state)
     checked = 0
+    evaluated = 0
     for conflict in pred.conflicts[:8]:
         result = opt.optimize(state, conflict, joint=joint)
+        evaluated += len(result.options)
         if (result.recommendation or {}).get("status") != "READY":
             continue
         assert result.selected is not None
@@ -93,7 +93,36 @@ def test_a_recommended_action_always_beats_doing_nothing(scenario):
             f"{scenario}/{conflict.id}: {result.selected.title} makes the section later")
         assert result.selected.residual_conflicts <= 0, (
             f"{scenario}/{conflict.id}: {result.selected.title} creates a conflict")
-    assert checked >= 0
+    assert evaluated > 0, f"{scenario}: the safety gate evaluated no concrete options"
+
+
+def test_recommendation_path_has_a_non_empty_ready_fixture():
+    """At least one deterministic fixture crosses every READY gate.
+
+    Per-scenario safety tests may legitimately decline a CP proposal after its
+    queue rollout; this separate fixture prevents an always-decline controller
+    from making those assertions vacuous.
+    """
+    eng = SimulationEngine("PLATFORM_BLOCKED", seed=42)
+    optimizer = OptimizationEngine()
+    ready = []
+    for _ in range(60):
+        eng.advance(60.0)
+        state = eng.analytic_state()
+        pred = predict(state)
+        joint = optimizer.solve_joint(state, pred)
+        if not joint.actions:
+            continue
+        episode = next(
+            (conflict for conflict in pred.conflicts
+             if conflict.id == joint.actions[0].reason_conflict_id), None)
+        if episode is None:
+            continue
+        result = optimizer.optimize(state, episode, joint=joint)
+        if (result.recommendation or {}).get("status") == "READY":
+            ready.append(result)
+            break
+    assert ready and ready[0].selected is not None
 
 
 @pytest.mark.parametrize("scenario", ["BASE", "SIGNAL_DEGRADED", "PEAK_SURGE"])
@@ -107,6 +136,8 @@ def test_accepting_every_recommendation_never_beats_the_shadow(scenario):
     live = SimulationEngine(scenario, seed=42)
     shadow = SimulationEngine(scenario, seed=42, accept_actions=False)
     opt = OptimizationEngine()
+    cohort = {tid for tid, rt in live.trains.items()
+              if 0 <= rt.entry_at_sec < 20 * 60}
 
     for _ in range(20):
         live.advance(60.0)
@@ -119,22 +150,24 @@ def test_accepting_every_recommendation_never_beats_the_shadow(scenario):
             if (result.recommendation or {}).get("status") == "READY" and result.selected:
                 live.apply_action(result.selected.action)
 
-    def totals(engine):
-        late = [rt.lateness_sec(engine.now, engine.service_epoch_sec)
-                for rt in engine.trains.values() if rt.admitted and not rt.finished]
-        return sum(v for v in late if v > 0)
+    # Drain the fixed cohort and compare terminal delay. Mid-run active sets are
+    # biased because a deliberately held train remains visible for longer.
+    live.advance(3600.0)
+    shadow.advance(3600.0)
+    live_records = {**live.completed_trains, **live.trains}
+    shadow_records = {**shadow.completed_trains, **shadow.trains}
+    assert all(live_records[t].actual_exit_sec is not None for t in cohort)
+    assert all(shadow_records[t].actual_exit_sec is not None for t in cohort)
 
-    common = ({t for t, rt in live.trains.items() if rt.admitted and not rt.finished}
-              & {t for t, rt in shadow.trains.items() if rt.admitted and not rt.finished})
+    def terminal_total(records):
+        from app.network.fleet import fleet_by_id
+        return sum(max(0.0, records[t].actual_exit_sec - fleet_by_id[t].clear_sec)
+                   for t in cohort)
 
-    def totals_common(engine):
-        return sum(max(0.0, engine.trains[t].lateness_sec(
-            engine.now, engine.service_epoch_sec)) for t in common)
-
-    ai, none = totals_common(live), totals_common(shadow)
-    assert ai <= none + 60.0, (
-        f"{scenario}: AI-assisted {ai / 60:.1f} min vs no action {none / 60:.1f} min "
-        f"over {len(common)} shared trains")
+    ai, none = terminal_total(live_records), terminal_total(shadow_records)
+    assert ai <= none + 1.0, (
+        f"{scenario}: AI-assisted {ai / 60:.1f} terminal min vs FIFO "
+        f"{none / 60:.1f} min over {len(cohort)} fixed trains")
 
 
 def test_the_comparison_uses_a_common_train_set():

@@ -68,6 +68,7 @@ export interface TrainSnapshot {
   holdRemainingSec: number;
   bookedDepSec: number;
   actualDepSec: number | null;
+  actualExitSec: number | null;
   /** Negative means genuinely early. */
   latenessSec: number;
   delayBreakdown: DelayBreakdown;
@@ -76,6 +77,10 @@ export interface TrainSnapshot {
   arrivalCorridor: string;
   departureCorridor: string;
   provenance: string;
+  dataSource: "RAILRADAR_LIVE" | "RAILRADAR_REPLAY" | "SYNTHETIC_FREIGHT" | "TIMETABLE_ESTIMATE" | string;
+  observationAgeSec: number | null;
+  positionQuality: "OBSERVED_ANCHOR" | "ESTIMATED" | "SYNTHETIC" | "TIMETABLE" | string;
+  confidence: number;
   admitted: boolean;
   finished: boolean;
 }
@@ -98,6 +103,11 @@ export interface Conflict {
   requiredSeparationSec: number;
   probability: number;
   timeToConflictSec: number;
+  episodeId: string;
+  evidence: "LIVE_ASSIMILATED_PREDICTION" | "HYBRID_PREDICTION" | "REPLAY_PREDICTION" | "PREDICTED" | string;
+  confidence: number;
+  firstSeenSec: number | null;
+  lastSeenSec: number | null;
 }
 
 export interface Prediction {
@@ -135,6 +145,15 @@ export interface ResolutionAction {
   holdSec?: number;
   routeId?: string;
   platformId?: string;
+  planId?: string;
+  actionId?: string;
+  effectiveResourceId?: string;
+  reasonConflictId?: string;
+  releaseAtSec?: number;
+  expiresAfterResourceId?: string;
+  expiresAtSec?: number;
+  lifecycle?: "PROPOSED" | "READY" | "APPLIED" | "EXPIRED" | "SUPERSEDED" | "REJECTED" | string;
+  supersedesActionId?: string;
 }
 
 export interface SafetyCheck {
@@ -158,6 +177,8 @@ export interface OptionOutcome {
   conflictResolved: boolean;
   addedDelaySec: Record<string, number>;
   networkDelaySec: number;
+  referenceNetworkDelaySec: number;
+  networkDelaySavingSec: number;
   passengerDelaySec: number;
   freightDelaySec: number;
   /** The primary cost: delay multiplied by the people on board. */
@@ -231,6 +252,10 @@ export interface DecisionRecord {
   latenessBeforeSec?: number;
   latenessAfterSec?: number;
   conflictCleared?: boolean;
+  projectedDelayNoActionSec?: number;
+  projectedDelayWithActionSec?: number;
+  projectedDelaySavingSec?: number;
+  projectedResidualCriticalConflicts?: number;
 }
 
 export interface DelayAvoided {
@@ -286,10 +311,19 @@ export interface LiveObservation {
 
 export interface LiveDataStatus {
   mode: "off" | "replay" | "live";
+  sourceState: "LIVE" | "DEGRADED" | "REPLAY_FALLBACK" | "REPLAY" | "STALE" | "OFF";
   enabled: boolean;
   observedTrains: number;
   observations: LiveObservation[];
   lastPollAt: number | null;
+  lastLiveAt: number | null;
+  observationAgeSec: number | null;
+  matchedToTimetable: number;
+  unmatched: string[];
+  fallbackReason: string;
+  budgetRemaining?: number | null;
+  passengerProvenance: string;
+  freightProvenance: string;
   freightNote: string;
 }
 
@@ -383,9 +417,27 @@ export interface RailGeometry {
   signals: { id: number; lat: number; lng: number; local: LocalPoint }[];
 }
 
+export interface RailTopology {
+  nodes: {
+    id: string;
+    kind: "CORRIDOR_END" | "PLATFORM_FACE" | "JUNCTION";
+    corridor: string;
+  }[];
+  edges: {
+    id: string;
+    lineId: string;
+    from: string;
+    to: string;
+    via: string[];
+    osmWayIds: number[];
+  }[];
+}
+
 export interface RailNetwork {
   units: "metres";
   geo?: RailGeometry;
+  topology: RailTopology;
+  lineToOsmWayIds: Record<string, number[]>;
   datum: string;
   stationLimitM: number;
   modelledReachM: number;
@@ -457,6 +509,10 @@ export interface TwinBundle {
     clears: boolean;
     reason: string;
     checks: SafetyCheck[];
+    projectedDelayNoActionSec?: number;
+    projectedDelayWithActionSec?: number;
+    projectedDelaySavingSec?: number;
+    projectedResidualCriticalConflicts?: number;
   } | null;
   modelStatus: {
     optimizer: { status: string; reason: string };

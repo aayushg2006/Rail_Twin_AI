@@ -142,7 +142,12 @@ export function DecisionPanel({ className }: { className?: string }) {
             tone={target.passengerMinutes > 500 ? "warning" : "neutral"}
           />
           <Row label="Freight delayed" value={minutes(target.freightDelaySec)} tone="freight" />
-          <Row label="Whole section" value={minutes(target.networkDelaySec)} />
+          <Row label="Predicted if no action" value={minutes(target.referenceNetworkDelaySec)} />
+          <Row
+            label="Predicted saving"
+            value={minutes(target.networkDelaySavingSec)}
+            tone={target.networkDelaySavingSec >= 1 ? "ok" : "warning"}
+          />
           <Row label="Happens" value={countdown(selectedConflict.etaSec)} tone="warning" />
         </div>
 
@@ -197,9 +202,16 @@ export function DecisionPanel({ className }: { className?: string }) {
               {verdict === null ? (
                 <p className="text-[10.5px] text-faint">Checking with the interlocking…</p>
               ) : verdict.passed ? (
-                <p className="text-[10.5px] text-ok">
-                  Permitted{verdict.clears ? " — clears the conflict" : " — does not clear the conflict"}.
-                </p>
+                <div className="text-[10.5px] text-ok">
+                  <p>
+                    Permitted{verdict.clears ? " — clears the conflict" : " — does not clear the conflict"}.
+                  </p>
+                  {verdict.projectedDelaySavingSec !== undefined && (
+                    <p className="mt-0.5">
+                      Live queue saving: {minutes(verdict.projectedDelaySavingSec)} versus no action.
+                    </p>
+                  )}
+                </div>
               ) : (
                 <p className="text-[10.5px] text-critical">Refused: {verdict.reason}</p>
               )}
@@ -251,7 +263,13 @@ export function DecisionPanel({ className }: { className?: string }) {
         <div className="mt-2 flex flex-wrap gap-2">
           <Btn
             variant="primary"
-            disabled={!target.feasible || !target.safety.passed}
+            disabled={
+              !target.feasible ||
+              !target.safety.passed ||
+              recommendation.status !== "READY" ||
+              target.id !== recommendation.optionId ||
+              target.networkDelaySavingSec < 1
+            }
             onClick={() => {
               decide(target, "ACCEPTED", note);
               setNote("");

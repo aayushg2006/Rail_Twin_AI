@@ -33,6 +33,7 @@ services:
       RAILTWIN_DATABASE_URL: "postgresql://rail:rail@postgres:5432/railtwin"
       RAILTWIN_REDIS_URL: "redis://redis:6379/0"
       RAILTWIN_CORS_ORIGINS: "*"
+      RAILTWIN_CLOCK_MODE: "${RAILTWIN_CLOCK_MODE:-LIVE}"
       # RailRadar: `replay` drives the demo from the recorded feed with no key
       # and no network. Set MODE=live and supply a key in .env to go live; the
       # monthly budget guard then caps spend at the free tier's 1,000 calls.
@@ -45,6 +46,8 @@ services:
       RAILTWIN_RAILRADAR_BASE_URL: "${RAILTWIN_RAILRADAR_BASE_URL:-https://api.railradar.in}"
       RAILTWIN_RAILRADAR_WATCHLIST_SIZE: "${RAILTWIN_RAILRADAR_WATCHLIST_SIZE:-6}"
       RAILTWIN_RAILRADAR_REPLAY_FILE: "/srv/data/railradar-replay.json"
+      RAILTWIN_BENCHMARK_SIGNING_KEY: "${RAILTWIN_BENCHMARK_SIGNING_KEY:-}"
+      RAILTWIN_BENCHMARK_REPORT_PATH: "/srv/data/benchmark-latest.json"
     ports:
       - "8000:8000"
     healthcheck:
@@ -56,7 +59,9 @@ services:
       - ./backend/app:/srv/app
       - ./backend/tests:/srv/tests:ro
       - ./backend/conftest.py:/srv/conftest.py:ro
-      - ./data:/srv/data:ro
+      # The network/manifests are inputs; benchmark-latest.json and its raw CSV
+      # are reproducible release artifacts written back to this directory.
+      - ./data:/srv/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -70,6 +75,7 @@ services:
     working_dir: /app
     environment:
       VITE_BACKEND_WS_URL: "ws://localhost:8000/ws"
+      VITE_OSM_TILE_URL: "${VITE_OSM_TILE_URL:-https://tile.openstreetmap.org/{z}/{x}/{y}.png}"
     ports:
       - "8080:8080"
     volumes:

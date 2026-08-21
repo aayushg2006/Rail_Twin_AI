@@ -12,6 +12,7 @@
  */
 import type {
   Chainage,
+  LocalPoint,
   RailGeometry,
   RailNetwork,
   ScreenPoint,
@@ -35,6 +36,8 @@ export interface GeoProjector extends Projector {
   local(x: number, y: number): ScreenPoint;
   /** Real coordinates -> screen units. */
   latLng(lat: number, lng: number): ScreenPoint;
+  /** Chainage snapped to the nearest compatible OSM rail way. */
+  lngLat(at: Chainage, lineId?: string | null): { lat: number; lng: number };
   /** A train's chainage -> screen units, following the real alignment. */
   point(at: Chainage, lineId?: string | null): ScreenPoint;
   platformFor(faceId: string): { local: ScreenPoint[]; lengthM: number } | null;
@@ -161,7 +164,7 @@ export function createGeoProjector(network: RailNetwork): GeoProjector {
    * geographically that is a bearing walk from the station, offset sideways by
    * which running line the movement is on.
    */
-  const point = (at: Chainage, lineId?: string | null): ScreenPoint => {
+  const rawPoint = (at: Chainage, lineId?: string | null): LocalPoint => {
     const bearing = CORRIDOR_BEARING[at.corridor] ?? 349;
     const theta = toRad(bearing);
     const along = at.m;
@@ -169,7 +172,62 @@ export function createGeoProjector(network: RailNetwork): GeoProjector {
     // Forward along the bearing, then perpendicular for the parallel road.
     const x = along * Math.sin(theta) + across * Math.cos(theta);
     const y = along * Math.cos(theta) - across * Math.sin(theta);
-    return local(x, y);
+    return { x, y };
+  };
+
+  const compatibleKinds = (at: Chainage, lineId?: string | null): Set<string> => {
+    if (lineId === "GDC" || lineId === "GYL" || at.corridor === "YARD") {
+      return new Set(["FREIGHT_SIDING", "YARD", "BRANCH_OR_LINK"]);
+    }
+    if (lineId === "BRD" || lineId === "BRU" || at.corridor === "DIVA") {
+      return new Set(["BRANCH_OR_LINK", "WESTERN_MAIN"]);
+    }
+    return new Set(["WESTERN_MAIN"]);
+  };
+
+  const snapLocal = (at: Chainage, lineId?: string | null): LocalPoint => {
+    const target = rawPoint(at, lineId);
+    if (!geometry) return target;
+    const kinds = compatibleKinds(at, lineId);
+    const mappedWayIds = new Set(lineId ? network.lineToOsmWayIds?.[lineId] ?? [] : []);
+    let best = target;
+    let bestD2 = Number.POSITIVE_INFINITY;
+    for (const way of geometry.ways) {
+      if (mappedWayIds.size ? !mappedWayIds.has(way.id) : !kinds.has(way.kind)) continue;
+      for (let i = 1; i < way.local.length; i += 1) {
+        const a = way.local[i - 1]!;
+        const b = way.local[i]!;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const length2 = dx * dx + dy * dy;
+        const t = length2 > 0
+          ? Math.max(0, Math.min(1,
+              ((target.x - a.x) * dx + (target.y - a.y) * dy) / length2))
+          : 0;
+        const candidate = { x: a.x + dx * t, y: a.y + dy * t };
+        const d2 = (candidate.x - target.x) ** 2 + (candidate.y - target.y) ** 2;
+        if (d2 < bestD2) {
+          bestD2 = d2;
+          best = candidate;
+        }
+      }
+    }
+    // OSM coverage is intentionally local.  Outside it, retain the physical
+    // corridor bearing rather than pinning every approach train to an end node.
+    return bestD2 <= 600 ** 2 ? best : target;
+  };
+
+  const lngLat = (at: Chainage, lineId?: string | null) => {
+    const p = snapLocal(at, lineId);
+    return {
+      lat: originLat + p.y / metresPerLat,
+      lng: originLng + p.x / metresPerLng,
+    };
+  };
+
+  const point = (at: Chainage, lineId?: string | null): ScreenPoint => {
+    const p = snapLocal(at, lineId);
+    return local(p.x, p.y);
   };
 
   const corridorReach = (corridor: string): number =>
@@ -269,6 +327,7 @@ export function createGeoProjector(network: RailNetwork): GeoProjector {
     home,
     local,
     latLng,
+    lngLat,
     point,
     linePath,
     resourceSpan,

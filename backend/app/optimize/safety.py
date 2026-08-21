@@ -12,7 +12,8 @@ from ..twin.predict import AnalyticState, Conflict
 from ..twin.state import AppliedAction
 
 
-def _route_check(action: AppliedAction, after: AnalyticState) -> tuple[bool, str]:
+def _route_check(action: AppliedAction, after: AnalyticState,
+                 before: AnalyticState | None = None) -> tuple[bool, str]:
     """Can the commanded route actually be set?"""
     if action.kind not in ("ALTERNATE_ROUTE", "PLATFORM_REASSIGNMENT"):
         return True, "No route change commanded"
@@ -29,7 +30,10 @@ def _route_check(action: AppliedAction, after: AnalyticState) -> tuple[bool, str
         return False, f"{target} is not a platform at this station"
     if target in after.blocked_resources:
         return False, f"{target} is withdrawn from service"
-    route = after.routes.get(action.train_id)
+    # Compatibility must be judged from the route the train is currently on.
+    # Looking only at `after` makes the proposed target validate itself because
+    # apply_action has already replaced route.platform_id with that target.
+    route = (before or after).routes.get(action.train_id)
     if route is not None:
         admissible = set(alternate_platforms(route)) | {route.platform_id}
         if target not in admissible:
@@ -38,7 +42,8 @@ def _route_check(action: AppliedAction, after: AnalyticState) -> tuple[bool, str
 
 
 def validate(action: AppliedAction, after: AnalyticState, conflict: Conflict,
-             resolved: bool, mode: str = "RESOLUTION") -> dict:
+             resolved: bool, mode: str = "RESOLUTION",
+             before: AnalyticState | None = None) -> dict:
     st = after.trains.get(action.train_id)
     res = net_resources[conflict.resource_id]
     required = round(res.headway_sec * after.headway_multiplier)
@@ -51,10 +56,14 @@ def validate(action: AppliedAction, after: AnalyticState, conflict: Conflict,
     # A re-platforming has to name a face that EXISTS, is in service, and can
     # actually take this movement. Checking only "is it blocked" let a command
     # through for a platform the station does not have.
-    route_ok, route_detail = _route_check(action, after)
+    route_ok, route_detail = _route_check(action, after, before)
     # A containment command may protect a movement from an unavailable
     # resource, but it must not claim that the resource has been restored.
-    plt_ok = containment or conflict.resource_id not in after.blocked_resources
+    rerouted_around_block = (
+        action.kind in ("PLATFORM_REASSIGNMENT", "ALTERNATE_ROUTE")
+        and resolved and route_ok)
+    plt_ok = (containment or conflict.resource_id not in after.blocked_resources
+              or rerouted_around_block)
     protection_ok = containment and action.kind in ("HOLD", "SPEED_REGULATION")
 
     checks = [

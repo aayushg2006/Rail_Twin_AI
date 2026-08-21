@@ -271,3 +271,69 @@ def test_detail_calls_are_spent_on_trains_that_are_actually_moving():
     service.observations[later] = Observation(
         later, 120.0, "VR", "now", "board", status="running")
     assert service.in_section()[0] == later, "the moving train is polled first"
+
+
+def test_feed_state_distinguishes_live_degraded_stale_and_fallback():
+    from app.ingest.service import IngestionService
+    from app.orchestrator.orchestrator import SimulationOrchestrator
+
+    client = RailRadarClient(mode="live", api_key="test-key")
+    service = IngestionService(SimulationOrchestrator("BASE"), client)
+    assert service.feed_state() == "STALE"
+    service.last_live_at = time.time()
+    assert service.feed_state() == "LIVE"
+    service.degraded = "quota reserve"
+    assert service.feed_state() == "DEGRADED"
+    service.client.mode = "replay"
+    assert service.feed_state() == "REPLAY_FALLBACK"
+
+
+@pytest.mark.asyncio
+async def test_live_locked_orchestrator_refuses_demo_pause_and_speed(monkeypatch):
+    from app.config import settings
+    from app.orchestrator.orchestrator import SimulationOrchestrator
+
+    monkeypatch.setattr(settings, "railradar_mode", "live")
+    monkeypatch.setattr(settings, "railradar_api_key", "test-key")
+    orchestrator = SimulationOrchestrator("BASE")
+    assert orchestrator.clock_mode == "LIVE"
+    assert orchestrator.speed == 1
+    await orchestrator.handle_command({"cmd": "pause"})
+    await orchestrator.handle_command({"cmd": "set_speed", "speed": 10})
+    await orchestrator.handle_command({"cmd": "set_clock_mode", "mode": "DEMO"})
+    assert orchestrator.playing is True
+    assert orchestrator.speed == 1
+    assert orchestrator.clock_mode == "LIVE"
+
+
+def test_unmatched_board_train_is_not_invented_without_a_defensible_route():
+    from app.ingest.service import IngestionService
+    from app.network.fleet import fleet_by_id
+    from app.orchestrator.orchestrator import SimulationOrchestrator
+
+    service = IngestionService(
+        SimulationOrchestrator("BASE"), RailRadarClient(mode="replay", api_key=""))
+    before = set(fleet_by_id)
+    observation = Observation(
+        "99998", 120.0, "UNKNOWN", "2026-08-21T12:00:00+05:30", "board",
+        status="running", origin="UNKNOWN", destination="NOWHERE",
+        scheduled_departure="12:10")
+    service._ensure_live_services([observation])
+    assert set(fleet_by_id) == before
+
+
+def test_detail_location_anchor_updates_all_paired_twins():
+    from app.ingest.service import IngestionService
+    from app.orchestrator.orchestrator import SimulationOrchestrator
+
+    orchestrator = SimulationOrchestrator("BASE")
+    service = IngestionService(
+        orchestrator, RailRadarClient(mode="replay", api_key=""))
+    number = service.in_section()[0]
+    observation = Observation(
+        number, 60.0, "BSR", "2026-08-21T12:00:00+05:30", "detail",
+        status="running")
+    service._assimilate([observation])
+    for engine in (orchestrator.engine, orchestrator.shadow_nothing,
+                   orchestrator.shadow_priority):
+        assert engine.observed_source[number] == "detail"

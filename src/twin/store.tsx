@@ -115,7 +115,7 @@ export function TwinProvider({ children }: { children: ReactNode }) {
   const [selection, setSelection] = useState<Selection>(null);
   const [selectedTrainId, setSelectedTrainId] = useState<string | null>(null);
   const [selectedConflictId, setSelectedConflictId] = useState<string | null>(null);
-  const [focusMode, setFocusMode] = useState(false);
+  const [focusMode, setFocusModeState] = useState(false);
   const [whatIfOpen, setWhatIfOpen] = useState(false);
   const [previewOptionId, setPreviewOptionId] = useState<string | null>(null);
   // Conflicts the controller has already answered, so a dismissed one does not
@@ -130,6 +130,12 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     predicted: true,
     decision: true,
   });
+
+  useEffect(() => {
+    if (!bundle) return;
+    setPlayingState(bundle.playing);
+    setSpeedState((bundle.clockMode === "LIVE" ? 1 : bundle.speed) as SimSpeed);
+  }, [bundle?.playing, bundle?.speed, bundle?.clockMode]);
 
   // The network is static; fetch it once and build the projector from it.
   useEffect(() => {
@@ -216,38 +222,28 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     );
   }, [options, previewOptionId, recommendation]);
 
+  const urgentConflict = useCallback(
+    (items: Conflict[]) => [...items].sort(
+      (a, b) =>
+        Number(b.severity === "CRITICAL") - Number(a.severity === "CRITICAL") ||
+        a.etaSec - b.etaSec,
+    )[0] ?? null,
+    [],
+  );
+
   // A conflict that has been resolved or expired must not leave a stale modal.
+  // In Focus Mode the view advances to the next urgent episode without opening
+  // What-if; if nothing remains it exits focus cleanly.
   useEffect(() => {
     if (selectedConflictId && !conflicts.some((c) => c.id === selectedConflictId)) {
-      setSelectedConflictId(null);
+      const next = focusMode ? urgentConflict(conflicts) : null;
+      setSelectedConflictId(next?.id ?? null);
+      setSelection(next ? { kind: "conflict", id: next.id } : null);
+      if (focusMode && !next) setFocusModeState(false);
       setWhatIfOpen(false);
       setPreviewOptionId(null);
     }
-  }, [conflicts, selectedConflictId]);
-
-  /**
-   * Present the advice, do not wait to be asked.
-   *
-   * A decision-support console that lists a critical conflict and then sits
-   * there is not supporting anything. The most urgent unanswered conflict that
-   * actually HAS a recommendation opens itself; the controller can dismiss it,
-   * and a dismissed conflict stays dismissed.
-   */
-  useEffect(() => {
-    if (whatIfOpen || selectedConflictId) return;
-    const actionable = conflicts
-      .filter((c) => !handledIds.has(c.id))
-      .filter((c) => (bundle?.recommendationByConflict?.[c.id]?.optionId ?? null) !== null)
-      .sort(
-        (a, b) =>
-          Number(b.severity === "CRITICAL") - Number(a.severity === "CRITICAL") ||
-          a.etaSec - b.etaSec,
-      )[0];
-    if (!actionable) return;
-    setSelectedConflictId(actionable.id);
-    setSelection({ kind: "conflict", id: actionable.id });
-    setWhatIfOpen(true);
-  }, [conflicts, bundle, whatIfOpen, selectedConflictId, handledIds]);
+  }, [conflicts, selectedConflictId, focusMode, urgentConflict]);
 
   const send = useCallback((msg: Record<string, unknown>) => {
     socketRef.current?.send(msg);
@@ -299,8 +295,7 @@ export function TwinProvider({ children }: { children: ReactNode }) {
       setSelectedConflictId(id);
       setSelection(id ? { kind: "conflict", id } : null);
       setPreviewOptionId(null);
-      if (id) setWhatIfOpen(true);
-      else setWhatIfOpen(false);
+      setWhatIfOpen(false);
     },
     [],
   );
@@ -315,9 +310,29 @@ export function TwinProvider({ children }: { children: ReactNode }) {
     setSelectedTrainId(sel?.kind === "train" ? sel.id : null);
     if (sel?.kind === "conflict") {
       setSelectedConflictId(sel.id);
-      setWhatIfOpen(true);
+      setWhatIfOpen(false);
     }
   }, []);
+
+  const setFocusMode = useCallback(
+    (enabled: boolean) => {
+      if (!enabled) {
+        setFocusModeState(false);
+        return;
+      }
+      const target = selectedConflict ?? urgentConflict(conflicts);
+      if (!target) {
+        setFocusModeState(false);
+        return;
+      }
+      setFocusModeState(true);
+      setSelectedConflictId(target.id);
+      setSelection({ kind: "conflict", id: target.id });
+      setPreviewOptionId(null);
+      setWhatIfOpen(false);
+    },
+    [conflicts, selectedConflict, urgentConflict],
+  );
 
   /**
    * Ask the twin whether a modified command would be permitted, BEFORE it can

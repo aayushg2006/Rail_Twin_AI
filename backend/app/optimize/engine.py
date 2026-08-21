@@ -23,6 +23,7 @@ controller, but the starred recommendation now comes from the joint plan.
 from __future__ import annotations
 
 import time
+import hashlib
 from dataclasses import dataclass, field
 
 from ortools.sat.python import cp_model
@@ -30,7 +31,9 @@ from ortools.sat.python import cp_model
 from ..config import ObjectiveWeights, settings
 from ..network.fleet import fleet_by_id
 from ..network.net import resources as net_resources
-from ..twin.predict import AnalyticState, Conflict, Prediction
+from ..network.routes import alternate_platforms
+from ..twin.predict import (AnalyticState, Conflict, Prediction,
+                            project_finish_free, queue_rollout)
 from ..twin.state import AppliedAction
 from . import altgraph
 from . import candidates as cand_mod
@@ -40,7 +43,10 @@ from .whatif import (OptionEval, delay_profile, evaluate,
 
 # A hold shorter than this is inside the noise of the projection and is not
 # worth issuing as a controller instruction.
-MIN_ACTIONABLE_HOLD_SEC = 20.0
+# The queue model is deterministic to the second and command idempotency now
+# prevents repeated micro-holds from stacking.  Five seconds is the smallest
+# schedule shift worth presenting to a controller.
+MIN_ACTIONABLE_HOLD_SEC = 5.0
 SOLVER_TIME_LIMIT_SEC = 1.0
 
 
@@ -57,6 +63,7 @@ class JointPlan:
     solve_ms: float = 0.0
     conflicts_considered: int = 0
     resources_contended: int = 0
+    plan_id: str | None = None
 
     @property
     def passenger_minutes_saved(self) -> float:
@@ -75,6 +82,7 @@ class JointPlan:
             "solveMs": round(self.solve_ms, 1),
             "conflictsConsidered": self.conflicts_considered,
             "resourcesContended": self.resources_contended,
+            "planId": self.plan_id,
         }
 
 
@@ -103,6 +111,23 @@ def _weight_of(train_id: str) -> float:
     return max(0.1, f.typical_load / 60.0)
 
 
+def _before_route_control(state: AnalyticState, train_id: str) -> bool:
+    train = state.trains.get(train_id)
+    route = state.routes.get(train_id)
+    if (train is None or route is None or train.departed_platform
+            or train.current_resource_id or train.queued_resource_id
+            or not route.stops):
+        return False
+    stop_s = route.stops[0].s
+    controls = [
+        use.enter_s for use in route.uses
+        if (net_resources[use.resource_id].kind == "JUNCTION"
+            and use.enter_s < stop_s)
+    ]
+    safe_control_s = max(controls) if controls else stop_s
+    return train.s < safe_control_s - 1e-6
+
+
 class OptimizationEngine:
     def __init__(self, weights: ObjectiveWeights | None = None):
         self.weights = weights or settings.weights
@@ -114,16 +139,133 @@ class OptimizationEngine:
         worth_acting = [c for c in prediction.conflicts
                         if c.severity == "CRITICAL"
                         or do_nothing_cost(state, c, self.weights) > 0]
-        contended = {c.resource_id for c in worth_acting}
-        if not contended:
+        conflict_resources = {c.resource_id for c in worth_acting}
+        if not conflict_resources:
             return JointPlan("EMPTY", "NONE", conflicts_considered=0)
         prediction = replace_conflicts(prediction, worth_acting)
 
-        # Only trains involved in contention need to be scheduled; everything
-        # else is running clear and would only enlarge the model.
-        involved = {t for c in prediction.conflicts for t in (c.train_a, c.train_b) if t}
-        plans = {tid: [w for w in prediction.plans.get(tid, []) if w.resource_id in contended]
-                 for tid in involved}
+        # A withdrawn platform is a route-choice problem, not a sequencing
+        # problem. Put the first compatible in-service face into the same joint
+        # receding-horizon lifecycle before building the disjunctive schedule.
+        # Its exact queue consequences are still checked by optimize().
+        for conflict in prediction.conflicts:
+            if conflict.resource_id not in state.blocked_resources:
+                continue
+            spec = net_resources.get(conflict.resource_id)
+            if spec is None or spec.kind != "PLATFORM":
+                continue
+            tid = conflict.train_a or conflict.train_b
+            train = state.trains.get(tid)
+            route = state.routes.get(tid)
+            if train is None or route is None or not _before_route_control(state, tid):
+                continue
+            choices = [pid for pid in alternate_platforms(route)
+                       if pid not in state.blocked_resources]
+            if not choices:
+                continue
+            target = choices[0]
+            signature = f"PLATFORM_REASSIGNMENT:{tid}:{target}:{conflict.id}"
+            plan_id = f"PLAN-{hashlib.sha1(signature.encode()).hexdigest()[:12]}"
+            action = AppliedAction(
+                "PLATFORM_REASSIGNMENT", tid, platform_id=target,
+                plan_id=plan_id, action_id=f"{plan_id}:A1",
+                effective_resource_id=conflict.resource_id,
+                reason_conflict_id=conflict.id)
+            return JointPlan(
+                status="FEASIBLE", solver="CP-SAT", actions=[action],
+                conflicts_considered=len(prediction.conflicts),
+                resources_contended=1, plan_id=plan_id)
+
+        # Before sequencing trains with holds, check whether a physically valid
+        # platform road removes an urgent conflict and its downstream queue.
+        # This is intentionally bounded to the first three episodes and two
+        # alternatives per train.  A route is admitted only with a substantial
+        # deterministic margin, fewer critical episodes and no throughput loss;
+        # the authoritative SimPy twin still decides whether application at the
+        # control point succeeds.
+        route_options: list[tuple[tuple[float, ...], OptionEval, Conflict]] = []
+        base_delays = delay_profile(state)
+        for conflict in prediction.conflicts[:3]:
+            if conflict.resource_id in state.blocked_resources:
+                continue
+            reference = evaluate_do_nothing(state, base_delays, conflict)
+            for tid in (conflict.train_a, conflict.train_b):
+                if not tid or not _before_route_control(state, tid):
+                    continue
+                route = state.routes.get(tid)
+                if route is None:
+                    continue
+                for target in alternate_platforms(route)[:2]:
+                    action = AppliedAction(
+                        "PLATFORM_REASSIGNMENT", tid, platform_id=target,
+                        effective_resource_id=conflict.resource_id,
+                        reason_conflict_id=conflict.id)
+                    candidate = cand_mod.Candidate(
+                        "OPT-JOINT-ROUTE", "R",
+                        f"Re-platform {tid} to {target} (queue plan)",
+                        action, "LOW")
+                    evaluated = evaluate(
+                        state, base_delays, candidate, conflict,
+                        reference=reference)
+                    saving = reference.network_delay_sec - evaluated.network_delay_sec
+                    critical_gain = (reference.critical_conflicts
+                                     - evaluated.critical_conflicts)
+                    if (evaluated.feasible and evaluated.conflict_resolved
+                            and evaluated.safety.get("passed")
+                            and evaluated.residual_conflicts <= 0
+                            and saving >= 60.0 and critical_gain >= 1
+                            and evaluated.throughput_delta >= 0):
+                        rank = (-float(critical_gain),
+                                -float(evaluated.throughput_delta),
+                                -saving, option_cost(evaluated, self.weights))
+                        route_options.append((rank, evaluated, conflict))
+        if route_options:
+            _, selected_route, conflict = min(route_options, key=lambda item: item[0])
+            action = selected_route.action
+            signature = (f"{action.kind}:{action.train_id}:{action.platform_id}:"
+                         f"{conflict.id}")
+            plan_id = f"PLAN-{hashlib.sha1(signature.encode()).hexdigest()[:12]}"
+            action.plan_id = plan_id
+            action.action_id = f"{plan_id}:A1"
+            return JointPlan(
+                status="FEASIBLE", solver="QUEUE-ROUTE", actions=[action],
+                passenger_minutes=selected_route.passenger_minutes,
+                fcfs_passenger_minutes=evaluate_do_nothing(
+                    state, base_delays, conflict).passenger_minutes,
+                conflicts_considered=len(prediction.conflicts),
+                resources_contended=len(conflict_resources), plan_id=plan_id)
+
+        # Downstream closure: add the complete remaining resource chain of each
+        # involved train, then every other train that touches those resources,
+        # until the set stops growing.  This is what lets a branch decision see
+        # the platform or north-throat queue it creates later.
+        source_plans = prediction.free_plans or prediction.plans
+        involved = {t for c in prediction.conflicts
+                    for t in (c.train_a, c.train_b) if t}
+        closure_resources = set(conflict_resources)
+        changed = True
+        while changed:
+            changed = False
+            for tid in tuple(involved):
+                for window in source_plans.get(tid, []):
+                    if window.enter <= prediction.horizon_sec and \
+                            window.resource_id not in closure_resources:
+                        closure_resources.add(window.resource_id)
+                        changed = True
+            for tid, seq in source_plans.items():
+                if tid in involved:
+                    continue
+                if any(w.enter <= prediction.horizon_sec
+                       and w.resource_id in closure_resources for w in seq):
+                    involved.add(tid)
+                    changed = True
+
+        plans = {
+            tid: [w for w in source_plans.get(tid, [])
+                  if w.enter <= prediction.horizon_sec
+                  and w.resource_id in closure_resources]
+            for tid in involved
+        }
         plans = {tid: p for tid, p in plans.items() if p}
         if len(plans) < 2:
             return JointPlan("EMPTY", "NONE", conflicts_considered=len(prediction.conflicts))
@@ -133,9 +275,13 @@ class OptimizationEngine:
             return (spec.headway_sec if spec else 120.0) * state.headway_multiplier
 
         graph = altgraph.build(plans, headway_of, state.blocked_resources)
-        baseline_start = altgraph.longest_paths(graph, altgraph.natural_order(graph))
-        baseline = (altgraph.total_cost(graph, baseline_start, _weight_of)
-                    if baseline_start is not None else 0.0)
+        fifo_rollout = queue_rollout(state, source_plans, prediction.horizon_sec)
+        baseline = 0.0
+        for tid in plans:
+            actual = fifo_rollout.finish_sec.get(tid)
+            free = project_finish_free(state, tid)
+            if actual is not None and free is not None:
+                baseline += max(0.0, actual - free) * _weight_of(tid)
 
         t0 = time.perf_counter()
         plan = self._solve_cpsat(graph, time_limit_sec)
@@ -144,20 +290,54 @@ class OptimizationEngine:
             if heur is None:
                 return JointPlan("INFEASIBLE", "NONE", fcfs_passenger_minutes=baseline,
                                  conflicts_considered=len(prediction.conflicts),
-                                 resources_contended=len(contended),
+                                 resources_contended=len(closure_resources),
                                  solve_ms=(time.perf_counter() - t0) * 1000)
             selected, cost = heur
             start = altgraph.longest_paths(graph, selected) or {}
             plan = ("HEURISTIC", "AMCC", start, cost, None)
 
         status, solver, start, cost, gap = plan
-        actions = self._actions_from_schedule(graph, start)
+        # Normalize every solver through the same graph cost used for FIFO.
+        # CP-SAT uses integer coefficients and bounds; its raw objective is not
+        # a safe value to compare directly with the floating-point reference.
+        comparable_cost = altgraph.total_cost(graph, start, _weight_of)
+        if comparable_cost > baseline + 1e-6:
+            # Doing nothing is itself a feasible plan.  Never emit commands
+            # when rounding or a bounded solve fails to improve upon it.
+            return JointPlan(
+                status="FEASIBLE", solver="FIFO", actions=[],
+                passenger_minutes=baseline, fcfs_passenger_minutes=baseline,
+                optimality_gap=None, solve_ms=(time.perf_counter() - t0) * 1000,
+                conflicts_considered=len(prediction.conflicts),
+                resources_contended=len(closure_resources))
+        actions = self._actions_from_schedule(graph, start, state.sim_time)
+        for action in actions:
+            related = [
+                c for c in prediction.conflicts
+                if action.train_id in {c.train_a, c.train_b}
+            ]
+            if related:
+                action.reason_conflict_id = min(related, key=lambda c: c.eta_sec).id
+        actions.sort(key=lambda action: (
+            next((c.eta_sec for c in prediction.conflicts
+                  if c.id == action.reason_conflict_id), float("inf")),
+            action.train_id,
+        ))
+        signature = "|".join(
+            f"{a.kind}:{a.train_id}:{a.effective_resource_id}:"
+            f"{a.reason_conflict_id}:{a.hold_sec}"
+            for a in actions)
+        plan_id = (f"PLAN-{hashlib.sha1(signature.encode()).hexdigest()[:12]}"
+                   if signature else None)
+        for index, action in enumerate(actions):
+            action.plan_id = plan_id
+            action.action_id = f"{plan_id}:A{index + 1}" if plan_id else None
         return JointPlan(
             status=status, solver=solver, actions=actions,
-            passenger_minutes=cost, fcfs_passenger_minutes=baseline,
+            passenger_minutes=comparable_cost, fcfs_passenger_minutes=baseline,
             optimality_gap=gap, solve_ms=(time.perf_counter() - t0) * 1000,
             conflicts_considered=len(prediction.conflicts),
-            resources_contended=len(contended))
+            resources_contended=len(closure_resources), plan_id=plan_id)
 
     def _solve_cpsat(self, graph: altgraph.AltGraph, time_limit_sec: float):
         if not graph.nodes:
@@ -203,7 +383,9 @@ class OptimizationEngine:
 
         solver = cp_model.CpSolver()
         solver.parameters.max_time_in_seconds = time_limit_sec
-        solver.parameters.num_search_workers = 4
+        # A single worker is reproducible across paired benchmark runs.  The
+        # bounded horizon is small enough that parallel search is unnecessary.
+        solver.parameters.num_search_workers = 1
         result = solver.Solve(model)
         if result not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
             return None
@@ -217,7 +399,8 @@ class OptimizationEngine:
 
     @staticmethod
     def _actions_from_schedule(graph: altgraph.AltGraph,
-                               start: dict[altgraph.Node, float]) -> list[AppliedAction]:
+                               start: dict[altgraph.Node, float],
+                               snapshot_time: float) -> list[AppliedAction]:
         """Translate a schedule into controller instructions.
 
         A node scheduled later than the train would naturally arrive means that
@@ -225,15 +408,23 @@ class OptimizationEngine:
         Only the first (largest) shift per train becomes an instruction - once it
         has waited, the rest of its path follows.
         """
-        shift: dict[str, float] = {}
-        for node, t in start.items():
+        shift: dict[str, dict[str, float | str]] = {}
+        for node, t in sorted(start.items(), key=lambda item: (
+                item[0].train_id, item[0].index)):
             delta = t - graph.release.get(node, 0.0)
             tid = graph.train_of[node]
-            if delta > shift.get(tid, 0.0):
-                shift[tid] = delta
+            if delta >= MIN_ACTIONABLE_HOLD_SEC and tid not in shift:
+                shift[tid] = {
+                    "hold": delta, "resource": node.resource_id,
+                    "ready": graph.release.get(node, 0.0), "start": t}
         return [
-            AppliedAction("HOLD", tid, hold_sec=round(delta))
-            for tid, delta in sorted(shift.items(), key=lambda kv: -kv[1])
+            AppliedAction(
+                "HOLD", tid, hold_sec=round(float(value["hold"])),
+                effective_resource_id=str(value["resource"]),
+                release_at_sec=snapshot_time + float(value["start"]))
+            for tid, value in sorted(
+                shift.items(), key=lambda kv: (float(kv[1]["ready"]), kv[0]))
+            for delta in [float(value["hold"])]
             if delta >= MIN_ACTIONABLE_HOLD_SEC
         ]
 
@@ -281,14 +472,50 @@ class OptimizationEngine:
             conservative rule is the only one that can be justified - so the
             optimiser declines more often than it acts, and says so.
             """
-            return (option_cost(ev, self.weights) < do_nothing_score
-                    and ev.network_delay_sec <= do_nothing.network_delay_sec + 1e-6
-                    and ev.residual_conflicts <= 0)
+            base_gate = (option_cost(ev, self.weights) < do_nothing_score
+                         and ev.network_delay_sec <= do_nothing.network_delay_sec + 1e-6
+                         and ev.residual_conflicts <= 0)
+            if not base_gate:
+                return False
+            if ev.action.kind in {"HOLD", "SPEED_REGULATION"}:
+                saving = do_nothing.network_delay_sec - ev.network_delay_sec
+                return (saving >= 120.0
+                        and ev.critical_conflicts < do_nothing.critical_conflicts
+                        and ev.throughput_delta >= 0)
+            return True
 
         viable = [e for e in evals
                   if e.feasible and e.conflict_resolved and e.safety.get("passed")
                   and beats_doing_nothing(e)]
         selected = min(viable, key=lambda e: option_cost(e, self.weights)) if viable else None
+
+        # Receding horizon: expose exactly the first command of the joint plan.
+        # Its exact magnitude is re-evaluated here.  Substituting a similarly
+        # shaped per-conflict candidate used to turn an 11-second joint shift
+        # into a 385-second hold, defeating the whole schedule.
+        if joint is not None:
+            first = joint.actions[0] if joint.actions else None
+            if first is None or first.reason_conflict_id != conflict.id:
+                selected = None
+            else:
+                entry = fleet_by_id.get(first.train_id)
+                number = entry.number if entry else first.train_id
+                if first.kind == "PLATFORM_REASSIGNMENT":
+                    title = f"Re-platform {number} to {first.platform_id} (joint plan)"
+                elif first.kind == "SPEED_REGULATION":
+                    title = f"Regulate {number} to {round(first.speed_kmh or 0)} km/h (joint plan)"
+                else:
+                    title = f"Hold {number} for {round(first.hold_sec or 0)} s (joint plan)"
+                exact = cand_mod.Candidate(
+                    "OPT-JOINT-FIRST", "J", title, first,
+                    "LOW" if first.kind == "PLATFORM_REASSIGNMENT" else "NONE")
+                exact_eval = evaluate(
+                    state, base_delays, exact, conflict, horizon, reference=reference)
+                evals.append(exact_eval)
+                selected = exact_eval if (
+                    exact_eval.feasible and exact_eval.conflict_resolved
+                    and exact_eval.safety.get("passed")
+                    and beats_doing_nothing(exact_eval)) else None
 
         if selected is None:
             best_effort = min(
@@ -299,16 +526,6 @@ class OptimizationEngine:
                     conflict_id=conflict.id, options=evals, selected=None,
                     objective_score=0.0, joint_plan=joint,
                     recommendation=self._monitor(conflict, best_effort, do_nothing))
-
-        # Prefer whatever the joint plan does to this conflict's trains: it is
-        # the only choice that accounts for what happens further along. It must
-        # still clear the do-nothing bar, so `viable` is the pool it draws from.
-        if selected is not None and joint and joint.actions:
-            involved = {conflict.train_a, conflict.train_b}
-            joint_trains = {a.train_id for a in joint.actions if a.train_id in involved}
-            aligned = [e for e in viable if e.action.train_id in joint_trains]
-            if aligned:
-                selected = min(aligned, key=lambda e: option_cost(e, self.weights))
 
         score = option_cost(selected, self.weights) if selected else 0.0
 
